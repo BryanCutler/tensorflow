@@ -118,6 +118,12 @@ py_library(
         ],
         "//conditions:default": [],
     }) + select({
+        "//tensorflow:with_arrow_support_windows_override": [],
+        "//tensorflow:with_arrow_support": [
+            "//tensorflow/contrib/arrow",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//tensorflow:with_aws_support_windows_override": [],
         "//tensorflow:with_aws_support": [
             "//tensorflow/contrib/kinesis",
@@ -157,6 +163,12 @@ cc_library(
         "//tensorflow:with_kafka_support_windows_override": [],
         "//tensorflow:with_kafka_support": [
             "//tensorflow/contrib/kafka:dataset_kernels",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//tensorflow:with_arrow_support_windows_override": [],
+        "//tensorflow:with_arrow_support": [
+            "//tensorflow/contrib/arrow:dataset_kernels",
         ],
         "//conditions:default": [],
     }) + select({
