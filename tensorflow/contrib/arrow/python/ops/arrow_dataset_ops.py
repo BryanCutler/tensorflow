@@ -32,6 +32,7 @@ class ArrowDataset(Dataset):
 
   def __init__(self,
                host,
+	       columns,
                output_types):
     """Create a ArrowDataset.
 
@@ -41,10 +42,12 @@ class ArrowDataset(Dataset):
     super(ArrowDataset, self).__init__()
     self._host = ops.convert_to_tensor(
         host, dtype=dtypes.string, name="host")
+    self._columns = columns
     self._output_types = output_types
 
   def _as_variant_tensor(self):
     return gen_dataset_ops.arrow_dataset(self._host,
+                                         self._columns,
                                          nest.flatten(self.output_types),
                                          nest.flatten(self.output_shapes))
 

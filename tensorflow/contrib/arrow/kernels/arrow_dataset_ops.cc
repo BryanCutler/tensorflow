@@ -71,9 +71,20 @@ class ArrowDatasetOp : public DatasetOpKernel {
             const std::vector<PartialTensorShape>& output_shapes)
         : DatasetBase(DatasetContext(ctx)),
           host_(host),
-          columns_(columns),
           output_types_(output_types),
-          output_shapes_(output_shapes) {}
+          output_shapes_(output_shapes) {
+
+			column_vectors_.reserve(columns.size());
+
+      for (size_t i = 0; i < columns.size(); i++) {
+        switch (output_types_[i]) {
+					case DT_INT32: {
+						auto cv = std::shared_ptr<ColumnVector>(new ScalarInt32ColumnVector(columns[i]));
+						column_vectors_.push_back(cv);
+					} break;
+				}
+			}
+    }
 
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
@@ -97,6 +108,30 @@ class ArrowDatasetOp : public DatasetOpKernel {
                               Node** output) const override {
       return Status::OK();
     }
+
+   protected:
+    class ColumnVector {
+		 public:
+      ColumnVector(int32 ordinal) : ordinal_(ordinal) {}
+
+			virtual Status AssignTensor(std::shared_ptr<arrow::RecordBatch> batch, 
+                                  int64_t row,
+                                  Tensor* out_tensor) = 0;
+     protected:
+      int32 ordinal_;
+    };
+
+		class ScalarInt32ColumnVector : public ColumnVector {
+		 public:
+      ScalarInt32ColumnVector(int32 ordinal) : ColumnVector(ordinal) {}
+
+			virtual Status AssignTensor(std::shared_ptr<arrow::RecordBatch> batch,
+                                  int64_t row,
+                                  Tensor* out_tensor) {
+			  out_tensor->scalar<int32>()() = 7;	
+				return Status::OK();
+			}
+    };
 
    private:
     class Iterator : public DatasetIterator<Dataset> {
@@ -125,15 +160,18 @@ class ArrowDatasetOp : public DatasetOpKernel {
           *end_of_sequence = true;
         }
 
-        for (size_t i = 0; i < dataset()->columns_.size(); i++) {
-          int32 column = dataset()->columns_[i];
+				// Assign Tensors for each column in the current row
+        for (size_t i = 0; i < dataset()->column_vectors_.size(); ++i) {
+          std::shared_ptr<ColumnVector> cv = dataset()->column_vectors_[i];
           DataType dt = dataset()->output_types_[i];
           Tensor out_tensor(ctx->allocator({}), dt, {});
-          TF_RETURN_IF_ERROR(GetElementAsTensor(column, dt, &out_tensor));
+          cv->AssignTensor(current_batch_, current_row_idx_, &out_tensor);
           out_tensors->emplace_back(std::move(out_tensor));
-          ++current_row_idx_;
-          *end_of_sequence = false;
-        }        
+        }
+
+				// Increment to next row
+        ++current_row_idx_;
+        *end_of_sequence = false;        
  
         return Status::OK();
       }
@@ -177,12 +215,6 @@ class ArrowDatasetOp : public DatasetOpKernel {
         num_batches_ = 0;
       }
 
-      Status GetElementAsTensor(int32 column, DataType dt, Tensor *out_tensor) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
-
-
-        return Status::OK();
-      }
-
      private:
       mutex mu_;
       std::shared_ptr<arrow::io::ReadableFile> in_file_ GUARDED_BY(mu_);
@@ -195,9 +227,9 @@ class ArrowDatasetOp : public DatasetOpKernel {
 
    private:
     const string host_;
-    const std::vector<int32> columns_;
     const DataTypeVector output_types_;
     const std::vector<PartialTensorShape> output_shapes_;
+    std::vector<std::shared_ptr<ColumnVector>> column_vectors_;
  };
 
  private:
