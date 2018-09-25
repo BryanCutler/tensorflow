@@ -10,41 +10,14 @@ exports_files(["LICENSE.txt"])
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 
 flatbuffer_cc_library(
-    name = "file_fbs",
+    name = "arrow_format",
     srcs = [
-        "format/File.fbs",
+				"format/File.fbs",
+				"format/Message.fbs",
+				"format/Schema.fbs",
+				"format/Tensor.fbs",
     ],
-    includes = [
-        ":schema_fbs",
-    ]
-)
-
-flatbuffer_cc_library(
-    name = "message_fbs",
-    srcs = [
-        "format/Message.fbs",
-    ],
-    includes = [
-        ":schema_fbs",
-        ":tensor_fbs",
-    ]
-)
-
-flatbuffer_cc_library(
-    name = "schema_fbs",
-    srcs = [
-        "format/Schema.fbs",
-    ],
-)
-
-flatbuffer_cc_library(
-    name = "tensor_fbs",
-    srcs = [
-        "format/Tensor.fbs",
-    ],
-    includes = [
-        ":schema_fbs",
-    ]
+    out_prefix = "cpp/src/arrow/ipc/"
 )
 
 cc_library(
@@ -68,21 +41,10 @@ cc_library(
         "cpp/src/arrow/util/compression_brotli.*",
         "cpp/src/arrow/ipc/feather.*",
         "cpp/src/arrow/ipc/json*",
-        #"cpp/src/arrow/ipc/message.cc",
-        #"cpp/src/arrow/ipc/writer.cc",
-        #"cpp/src/arrow/ipc/reader.cc",
-        #"cpp/src/arrow/ipc/metadata-internal.*",
         "cpp/src/arrow/ipc/stream-to-file.cc",
         "cpp/src/arrow/ipc/file-to-stream.cc",       
     ]),
     hdrs = [
-    ],
-    data = [
-        "format/File.fbs",
-        "format/Message.fbs",
-        "format/Schema.fbs",
-        "@flatbuffers",
-        "@flatbuffers//:flatc",
     ],
     defines = [
         "ARROW_WITH_SNAPPY",
@@ -93,17 +55,7 @@ cc_library(
     copts = [
     ],
     deps = [
-        #"format/File.fbs",
-        #"format/Message.fbs",
-        #"format/Schema.fbs",
-        #"@flatbuffers",
-        #"@flatbuffers//:flatc",
-        #"@flatbuffers//:flatc_library",
-        ":file_fbs",
-        ":message_fbs",
-        ":schema_fbs",
-        ":tensor_fbs",
-        #":arrow_format",
+        ":arrow_format",
         "@snappy",
     ],
 )
