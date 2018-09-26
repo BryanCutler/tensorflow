@@ -128,7 +128,9 @@ class ArrowDatasetOp : public DatasetOpKernel {
 			virtual Status AssignTensor(std::shared_ptr<arrow::RecordBatch> batch,
                                   int64_t row,
                                   Tensor* out_tensor) {
-			  out_tensor->scalar<int32>()() = 7;	
+        std::shared_ptr<arrow::Array> arr = batch->column(ordinal_);
+				arrow::Int32Array* a = reinterpret_cast<arrow::Int32Array*>(arr.get());
+				out_tensor->scalar<int32>()() = a->Value(row);
 				return Status::OK();
 			}
     };

@@ -40,7 +40,7 @@ class ArrowDatasetTest(test.TestCase):
     
     names = ["int32"]
     data = [
-    	[7, 7, 7],
+       [1, 2, 3, 4],
     ]
 
     arrays = [pa.array(data[0], type=pa.int32())]
