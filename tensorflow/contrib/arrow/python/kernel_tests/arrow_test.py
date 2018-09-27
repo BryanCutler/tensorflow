@@ -38,12 +38,18 @@ class ArrowDatasetTest(test.TestCase):
   def testArrowDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
     
-    names = ["int32"]
+    names = ["int32", "float32"]
+    
     data = [
        [1, 2, 3, 4],
+       [1.1, 2.2, 3.3, 4.4],
     ]
 
-    arrays = [pa.array(data[0], type=pa.int32())]
+    arrays = [
+        pa.array(data[0], type=pa.int32()),
+        pa.array(data[1], type=pa.float32()),
+    ]
+
     batch = pa.RecordBatch.from_arrays(arrays, names)
     writer = pa.RecordBatchFileWriter(f, batch.schema)
     writer.write_batch(batch)
@@ -51,8 +57,8 @@ class ArrowDatasetTest(test.TestCase):
     f.close()
 
     host = f.name
-    columns = (0,)
-    output_types = (dtypes.int32,)
+    columns = (0, 1)
+    output_types = (dtypes.int32, dtypes.float32)
 
     dataset = arrow_dataset_ops.ArrowDataset(
 	host, columns, output_types)
@@ -64,9 +70,9 @@ class ArrowDatasetTest(test.TestCase):
       for row_num in range(len(data[0])):
         value = sess.run(next_element)
         self.assertEqual(value[0], data[0][row_num])
+        self.assertAlmostEqual(value[1], data[1][row_num], 2)
 
     os.unlink(f.name)
-    self.assertTrue(True)
 
 if __name__ == "__main__":
   test.main()
