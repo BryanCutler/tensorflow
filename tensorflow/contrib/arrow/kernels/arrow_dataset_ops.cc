@@ -103,38 +103,68 @@ class ArrowDatasetOp : public DatasetOpKernel {
     class ArrowConvertTensor : public arrow::ArrayVisitor {
      public:
       ArrowConvertTensor(int64_t row_idx, IteratorContext* ctx) 
-        : curr_row_idx_(row_idx), curr_ctx_(ctx) {}
+        : curr_row_idx_(row_idx), curr_ctx_(ctx), curr_values_length_(1) {}
 
       Status AppendTensor(std::shared_ptr<arrow::Array> array,
                           DataType output_type,
                           std::vector<Tensor>* out_tensors) {
         curr_type_ = output_type;
         out_tensors_ = out_tensors;
+        // TODO: make sure null count is 0
         CHECK_ARROW(array->Accept(this));
         return Status::OK();
       }
 
      protected:
-      virtual arrow::Status Visit(const arrow::Int32Array& array) {
-        // TODO: check type is correct
-        Tensor tensor(curr_ctx_->allocator({}), curr_type_, {});
-        tensor.scalar<int32>()() = array.Value(curr_row_idx_);
+
+      template <typename ArrayType>
+      arrow::Status VisitFixedWidth(const ArrayType& array) {
+        // TODO check type is correct
+        Tensor tensor(curr_ctx_->allocator({}),
+            curr_type_, {curr_values_length_});
+            //curr_values_length_ == 1 ? {} : {values_length}); TODO need scalar
+
+        // TODO
+        int32 type_bit_width = 4;
+
+        auto values = array.data()->buffers[1];
+        if (values != NULLPTR) {
+          const void* src = (values->data() + array.data()->offset * type_bit_width) + curr_row_idx_ * type_bit_width;
+          void* dst = const_cast<char*>(tensor.tensor_data().data());
+          std::memcpy(dst, src, curr_values_length_ * type_bit_width);
+        }
+
         out_tensors_->emplace_back(std::move(tensor));
-        return arrow::Status::OK(); 
+        return arrow::Status::OK();
       }
 
-      virtual arrow::Status Visit(const arrow::FloatArray& array) {
-        // TODO: check type is correct
-        Tensor tensor(curr_ctx_->allocator({}), curr_type_, {});
-        tensor.scalar<float>()() = array.Value(curr_row_idx_);
-        out_tensors_->emplace_back(std::move(tensor));
-        return arrow::Status::OK(); 
+#define VISIT_FIXED_WIDTH(TYPE) \
+      virtual arrow::Status Visit(const TYPE& array) override { return VisitFixedWidth(array); }
+
+      VISIT_FIXED_WIDTH(arrow::Int32Array)
+      VISIT_FIXED_WIDTH(arrow::FloatArray)
+#undef VISIT_FIXED_WITH
+
+      virtual arrow::Status Visit(const arrow::ListArray& array) override {
+        // TODO check if another array
+        int32 values_offset = array.value_offset(curr_row_idx_);
+        curr_values_length_ = array.value_length(curr_row_idx_);
+        int32 tmp_row_idx = curr_row_idx_;
+        curr_row_idx_ = 0;
+
+        std::shared_ptr<arrow::Array> values = array.values();
+        std::shared_ptr<arrow::Array> element_values = values->Slice(values_offset, curr_values_length_);
+        auto result = element_values->Accept(this);
+        curr_row_idx_ = tmp_row_idx;
+        curr_values_length_ = 1;
+        return result;
       }
 
      private:
       int64_t curr_row_idx_;
       DataType curr_type_;
       IteratorContext* curr_ctx_;
+      int32 curr_values_length_;
       std::vector<Tensor> *out_tensors_;
     };
 
@@ -171,7 +201,7 @@ class ArrowDatasetOp : public DatasetOpKernel {
           int32 col = dataset()->columns_[i];
           DataType dt = dataset()->output_types_[i];
           std::shared_ptr<arrow::Array> arr = current_batch_->column(col);
-          arrow_converter.AppendTensor(arr, dt, out_tensors);
+          TF_RETURN_IF_ERROR(arrow_converter.AppendTensor(arr, dt, out_tensors));
         }
 
         // Increment to next row

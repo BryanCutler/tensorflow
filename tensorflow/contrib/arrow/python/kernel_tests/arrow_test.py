@@ -38,16 +38,20 @@ class ArrowDatasetTest(test.TestCase):
   def testArrowDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
     
-    names = ["int32", "float32"]
+    names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
     
     data = [
        [1, 2, 3, 4],
        [1.1, 2.2, 3.3, 4.4],
+       [[1, 1], [2, 2], [3, 3], [4, 4]],
+       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
     ]
 
     arrays = [
         pa.array(data[0], type=pa.int32()),
         pa.array(data[1], type=pa.float32()),
+        pa.array(data[2], type=pa.list_(pa.int32())),
+        pa.array(data[3], type=pa.list_(pa.int32())),
     ]
 
     batch = pa.RecordBatch.from_arrays(arrays, names)
@@ -57,8 +61,8 @@ class ArrowDatasetTest(test.TestCase):
     f.close()
 
     host = f.name
-    columns = (0, 1)
-    output_types = (dtypes.int32, dtypes.float32)
+    columns = (0, 1, 2, 3)
+    output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
 
     dataset = arrow_dataset_ops.ArrowDataset(
 	host, columns, output_types)
@@ -71,6 +75,8 @@ class ArrowDatasetTest(test.TestCase):
         value = sess.run(next_element)
         self.assertEqual(value[0], data[0][row_num])
         self.assertAlmostEqual(value[1], data[1][row_num], 2)
+        self.assertListEqual(value[2].tolist(), data[2][row_num])
+        self.assertListEqual(value[3].tolist(), data[3][row_num])
 
     os.unlink(f.name)
 

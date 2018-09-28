@@ -32,7 +32,7 @@ class ArrowDataset(Dataset):
 
   def __init__(self,
                host,
-         columns,
+               columns,
                output_types):
     """Create a ArrowDataset.
 
