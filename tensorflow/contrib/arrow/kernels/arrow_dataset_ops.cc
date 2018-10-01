@@ -233,6 +233,7 @@ class ArrowDatasetOp : public DatasetOpKernel {
       }
 
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+        current_batch_ = nullptr;
         if (current_batch_idx_ < num_batches_) {
           CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
           current_row_idx_ = 0;
