@@ -64,7 +64,7 @@ class ArrowDatasetTest(test.TestCase):
     columns = (0, 1, 2, 3)
     output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
 
-    dataset = arrow_dataset_ops.ArrowDataset(
+    dataset = arrow_dataset_ops.ArrowStreamDataset(
 	host, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()

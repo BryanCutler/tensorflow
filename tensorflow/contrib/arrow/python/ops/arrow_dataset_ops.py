@@ -26,7 +26,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 
 
-class ArrowDataset(Dataset):
+class ArrowStreamDataset(Dataset):
   """A Arrow Dataset.
   """
 
@@ -39,17 +39,17 @@ class ArrowDataset(Dataset):
     Args:
       host: A `tf.string` tensor containing a host address..
     """
-    super(ArrowDataset, self).__init__()
+    super(ArrowStreamDataset, self).__init__()
     self._host = ops.convert_to_tensor(
         host, dtype=dtypes.string, name="host")
     self._columns = columns
     self._output_types = output_types
 
   def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_dataset(self._host,
-                                         self._columns,
-                                         nest.flatten(self.output_types),
-                                         nest.flatten(self.output_shapes))
+    return gen_dataset_ops.arrow_stream_dataset(self._host,
+                                                self._columns,
+                                                nest.flatten(self.output_types),
+                                                nest.flatten(self.output_shapes))
 
   @property
   def output_classes(self):

@@ -19,7 +19,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-REGISTER_OP("ArrowDataset")
+REGISTER_OP("ArrowStreamDataset")
     .Input("host: string")
     .Input("columns: int32")
     .Output("handle: variant")
@@ -30,7 +30,7 @@ REGISTER_OP("ArrowDataset")
     .Doc(R"doc(
 Creates a dataset that connects to a host serving Arrow RecordBatches in stream format.
 
-host: A list of bootstrap servers.
+host: A host address that is serving an Arrow stream.
 )doc");
 
 }  // namespace tensorflow

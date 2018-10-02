@@ -21,12 +21,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.contrib.arrow.python.ops.arrow_dataset_ops import ArrowDataset
+from tensorflow.contrib.arrow.python.ops.arrow_dataset_ops import ArrowStreamDataset
 
 from tensorflow.python.util.all_util import remove_undocumented
 
 _allowed_symbols = [
-    "ArrowDataset",
+    "ArrowStreamDataset",
 ]
 
 remove_undocumented(__name__)
