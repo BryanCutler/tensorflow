@@ -19,6 +19,20 @@ limitations under the License.
 
 namespace tensorflow {
 
+REGISTER_OP("ArrowFileDataset")
+    .Input("filename: string")
+    .Input("columns: int32")
+    .Output("handle: variant")
+    .Attr("output_types: list(type) >= 1")
+    .Attr("output_shapes: list(shape) >= 1")
+    .SetIsStateful()
+    .SetShapeFn(shape_inference::ScalarShape)
+    .Doc(R"doc(
+Creates a dataset that reads a file Arrow RecordBatches in file format.
+
+filename: Path to a file that contains Arrow RecordBatches.
+)doc");
+
 REGISTER_OP("ArrowStreamDataset")
     .Input("host: string")
     .Input("columns: int32")

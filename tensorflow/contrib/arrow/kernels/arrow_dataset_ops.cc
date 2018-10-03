@@ -247,6 +247,91 @@ class ArrowOpKernelBase : public DatasetOpKernel {
 };
 
 
+class ArrowFileDatasetOp : public ArrowOpKernelBase {
+ public:
+  using DatasetOpKernel::DatasetOpKernel;
+
+  explicit ArrowFileDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
+
+  virtual void MakeArrowDataset(OpKernelContext* ctx, 
+                                const std::vector<int32>& columns,
+                                const DataTypeVector& output_types,
+                                const std::vector<PartialTensorShape>& output_shapes,
+                                DatasetBase** output) override {
+    const Tensor* filename_tensor;
+    OP_REQUIRES_OK(ctx, ctx->input("filename", &filename_tensor));
+    OP_REQUIRES(ctx, filename_tensor->dims() == 0,
+       errors::InvalidArgument("`filename` must be a scalar.")); 
+    string filename = filename_tensor->flat<string>()(0);
+
+    *output = new Dataset(ctx, filename, columns, output_types_, output_shapes_);
+  }
+
+ private:
+  class Dataset : public ArrowDatasetBase {
+   public:
+    Dataset(OpKernelContext* ctx,
+            const string& filename,
+            const std::vector<int32>& columns,
+            const DataTypeVector& output_types,
+            const std::vector<PartialTensorShape>& output_shapes)
+        : ArrowDatasetBase(ctx, columns, output_types, output_shapes),
+          filename_(filename) {}
+
+   protected:
+    std::unique_ptr<IteratorBase> MakeIteratorInternal(
+        const string& prefix) const override {
+      return std::unique_ptr<IteratorBase>(
+          new Iterator({this, strings::StrCat(prefix, "::ArrowFile")}));
+    }
+
+    string DebugString() const override { return "ArrowFileDatasetOp::Dataset"; }
+
+   private:
+    class Iterator : public ArrowBaseIterator<Dataset> {
+     public:
+      explicit Iterator(const Params& params)
+          : ArrowBaseIterator<Dataset>(params) {}
+
+     private:
+      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        CHECK_ARROW(arrow::io::ReadableFile::Open(dataset()->filename_, &in_file_));
+        CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(in_file_.get(), &reader_));
+        num_batches_ = reader_->num_record_batches();
+        if (num_batches_ > 0) {
+          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+        }
+        return Status::OK();
+      }
+
+      Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        ArrowBaseIterator<Dataset>::NextStreamLocked();
+        if (current_batch_idx_ < num_batches_) {
+          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+          ++current_batch_idx_;
+        }
+        return Status::OK();
+      }
+
+      void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        ArrowBaseIterator<Dataset>::ResetStreamsLocked();
+        reader_.reset();
+        in_file_.reset();
+        current_batch_idx_ = 0;
+        num_batches_ = 0;
+      }
+
+      std::shared_ptr<arrow::io::ReadableFile> in_file_ GUARDED_BY(mu_);
+      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
+      int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
+      int num_batches_ GUARDED_BY(mu_) = 0;
+    };
+
+    const string filename_;
+  };
+};
+
+
 class ArrowStreamDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
@@ -282,7 +367,7 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
       return std::unique_ptr<IteratorBase>(
-          new Iterator({this, strings::StrCat(prefix, "::Arrow")}));
+          new Iterator({this, strings::StrCat(prefix, "::ArrowStream")}));
     }
 
     string DebugString() const override { return "ArrowStreamDatasetOp::Dataset"; }
@@ -330,6 +415,10 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
     const string host_;
   };
 };
+
+
+REGISTER_KERNEL_BUILDER(Name("ArrowFileDataset").Device(DEVICE_CPU),
+                        ArrowFileDatasetOp);
 
 REGISTER_KERNEL_BUILDER(Name("ArrowStreamDataset").Device(DEVICE_CPU),
                         ArrowStreamDatasetOp);

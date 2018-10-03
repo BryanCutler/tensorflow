@@ -26,30 +26,11 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 
 
-class ArrowStreamDataset(Dataset):
-  """A Arrow Dataset.
-  """
+class ArrowBaseDataset(Dataset):
 
-  def __init__(self,
-               host,
-               columns,
-               output_types):
-    """Create a ArrowDataset.
-
-    Args:
-      host: A `tf.string` tensor containing a host address..
-    """
-    super(ArrowStreamDataset, self).__init__()
-    self._host = ops.convert_to_tensor(
-        host, dtype=dtypes.string, name="host")
+  def __init__(self, columns, output_types):
     self._columns = columns
     self._output_types = output_types
-
-  def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_stream_dataset(self._host,
-                                                self._columns,
-                                                nest.flatten(self.output_types),
-                                                nest.flatten(self.output_shapes))
 
   @property
   def output_classes(self):
@@ -62,3 +43,50 @@ class ArrowStreamDataset(Dataset):
   @property
   def output_types(self):
     return self._output_types
+
+class ArrowFileDataset(ArrowBaseDataset):
+  """An Arrow Dataset for reading record batches from a file.
+  """
+
+  def __init__(self,
+               filename,
+               columns,
+               output_types):
+    """Create an ArrowDataset.
+
+    Args:
+      filename: A `tf.string` tensor containing a file with Arrow record batches
+    """
+    super(ArrowFileDataset, self).__init__(columns, output_types)
+    self._filename = ops.convert_to_tensor(
+        filename, dtype=dtypes.string, name="filename")
+  
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.arrow_stream_dataset(self._filename,
+                                                self._columns,
+                                                nest.flatten(self.output_types),
+                                                nest.flatten(self.output_shapes))
+
+class ArrowStreamDataset(ArrowBaseDataset):
+  """An Arrow Dataset for reading record batches from an input stream.
+  """
+
+  def __init__(self,
+               host,
+               columns,
+               output_types):
+    """Create an ArrowDataset.
+
+    Args:
+      host: A `tf.string` tensor containing a host address..
+    """
+    super(ArrowStreamDataset, self).__init__(columns, output_types)
+    self._host = ops.convert_to_tensor(
+        host, dtype=dtypes.string, name="host")
+  
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.arrow_stream_dataset(self._host,
+                                                self._columns,
+                                                nest.flatten(self.output_types),
+                                                nest.flatten(self.output_shapes))
+

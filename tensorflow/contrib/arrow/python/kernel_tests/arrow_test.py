@@ -35,7 +35,7 @@ class ArrowDatasetTest(test.TestCase):
   def setUp(self):
     pass
 
-  def testArrowDataset(self):
+  def testArrowFileDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
     
     names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
@@ -64,7 +64,7 @@ class ArrowDatasetTest(test.TestCase):
     columns = (0, 1, 2, 3)
     output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
 
-    dataset = arrow_dataset_ops.ArrowStreamDataset(
+    dataset = arrow_dataset_ops.ArrowFileDataset(
 	host, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()
