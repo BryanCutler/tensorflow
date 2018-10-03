@@ -17,6 +17,7 @@ limitations under the License.
 #include "arrow/api.h"
 #include "arrow/io/api.h"
 #include "arrow/ipc/api.h"
+#include "arrow/util/io-util.h"
 
 #define CHECK_ARROW(arrow_status)              \
   do {                                         \
@@ -380,36 +381,28 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
 
      private:
       Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
-        CHECK_ARROW(arrow::io::ReadableFile::Open(dataset()->host_, &in_file_));
-        CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(in_file_.get(), &reader_));
-        num_batches_ = reader_->num_record_batches();
-        if (num_batches_ > 0) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+        if (dataset()->host_ == "STDIN") {
+          in_stream_.reset(new arrow::io::StdinStream());
         }
+        CHECK_ARROW(arrow::ipc::RecordBatchStreamReader::Open(in_stream_.get(), &reader_));
+        CHECK_ARROW(reader_->ReadNext(&current_batch_));
         return Status::OK();
       }
 
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::NextStreamLocked();
-        if (current_batch_idx_ < num_batches_) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
-          ++current_batch_idx_;
-        }
+        CHECK_ARROW(reader_->ReadNext(&current_batch_));
         return Status::OK();
       }
 
       void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::ResetStreamsLocked();
         reader_.reset();
-        in_file_.reset();
-        current_batch_idx_ = 0;
-        num_batches_ = 0;
+        in_stream_.reset();
       }
 
-      std::shared_ptr<arrow::io::ReadableFile> in_file_ GUARDED_BY(mu_);
-      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
-      int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
-      int num_batches_ GUARDED_BY(mu_) = 0;
+      std::shared_ptr<arrow::io::InputStream> in_stream_ GUARDED_BY(mu_);
+      std::shared_ptr<arrow::ipc::RecordBatchReader> reader_ GUARDED_BY(mu_);
     };
 
     const string host_;
