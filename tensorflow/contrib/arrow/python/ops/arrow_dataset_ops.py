@@ -62,10 +62,10 @@ class ArrowFileDataset(ArrowBaseDataset):
         filename, dtype=dtypes.string, name="filename")
   
   def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_stream_dataset(self._filename,
-                                                self._columns,
-                                                nest.flatten(self.output_types),
-                                                nest.flatten(self.output_shapes))
+    return gen_dataset_ops.arrow_file_dataset(self._filename,
+                                              self._columns,
+                                              nest.flatten(self.output_types),
+                                              nest.flatten(self.output_shapes))
 
 class ArrowStreamDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from an input stream.

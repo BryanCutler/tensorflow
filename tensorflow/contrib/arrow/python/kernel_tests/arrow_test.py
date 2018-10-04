@@ -19,7 +19,10 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import subprocess
+import sys
 import tempfile
+
 import pyarrow as pa
 
 from tensorflow.contrib.arrow.python.ops import arrow_dataset_ops
@@ -37,9 +40,9 @@ class ArrowDatasetTest(test.TestCase):
 
   def testArrowFileDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
-    
+
     names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
-    
+
     data = [
        [1, 2, 3, 4],
        [1.1, 2.2, 3.3, 4.4],
@@ -80,5 +83,68 @@ class ArrowDatasetTest(test.TestCase):
 
     os.unlink(f.name)
 
+  def testArrowStreamDataset(self):
+    names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
+
+    data = [
+       [1, 2, 3, 4],
+       [1.1, 2.2, 3.3, 4.4],
+       [[1, 1], [2, 2], [3, 3], [4, 4]],
+       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
+    ]
+
+    arrays = [
+        pa.array(data[0], type=pa.int32()),
+        pa.array(data[1], type=pa.float32()),
+        pa.array(data[2], type=pa.list_(pa.int32())),
+        pa.array(data[3], type=pa.list_(pa.int32())),
+    ]
+
+    interpreter_path = sys.executable
+    file_path = os.path.abspath(__file__)
+
+    p = subprocess.Popen([interpreter_path, file_path, "run_arrow_stdin"],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+
+    batch = pa.RecordBatch.from_arrays(arrays, names)
+    writer = pa.RecordBatchStreamWriter(p.stdin, batch.schema)
+    writer.write_batch(batch)
+    writer.close()
+
+    std_out, std_err = p.communicate()
+    status = p.returncode
+    if status != 0:
+        raise RuntimeError("Subprocess reading Arrow stream exited with error: " +
+                "%d\nSTDERR:\n%s\nSTDOUT:\n%s" % (status, std_err, std_out))
+    raise RuntimeError("Success!:\n%s" % std_out)
+
+
+def run_arrow_stdin():
+    #import tensorflow as tf
+    from tensorflow.python.client import session
+    host = "STDIN"
+    columns = (0, 1, 2, 3)
+    output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
+
+    dataset = arrow_dataset_ops.ArrowStreamDataset(
+	host, columns, output_types)
+
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
+
+    with session.Session() as sess:
+      while True:
+        try:
+          value = sess.run(next_element)
+          print(value)
+        except tf.errors.OutOfRangeError:
+          break
+
+
 if __name__ == "__main__":
-  test.main()
+  import sys
+  if len(sys.argv) > 1 and sys.argv[1] == "run_arrow_stdin":
+    run_arrow_stdin()
+  else:
+    test.main()
