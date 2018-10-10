@@ -17,6 +17,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import io
+import pyarrow as pa
+
 from tensorflow.contrib.arrow.python.ops import arrow_op_loader  # pylint: disable=unused-import
 from tensorflow.contrib.arrow.python.ops import gen_dataset_ops
 from tensorflow.python.data.ops.dataset_ops import Dataset
@@ -49,24 +52,38 @@ class ArrowDataset(ArrowBaseDataset):
   """
 
   def __init__(self,
-               data,
+               record_batches,
                columns,
                output_types):
     """Create an ArrowDataset.
 
     Args:
-      filename: A `tf.string` tensor containing a file with Arrow record batches
+      record_batches: An Arrow record batch or sequence of record batches
     """
     super(ArrowDataset, self).__init__(columns, output_types)
+    if isinstance(record_batches, pa.RecordBatch):
+      record_batches = [record_batches]
+    assert len(record_batches) > 0
+    buf = io.BytesIO()
+    writer = pa.RecordBatchFileWriter(buf, record_batches[0].schema)
+    for batch in record_batches:
+      writer.write_batch(batch)
+    writer.close()
 
     self._serialized_batches = ops.convert_to_tensor(
-        data, dtype=dtypes.string, name="serialized_batches")
+        buf.getvalue(), dtype=dtypes.string, name="serialized_batches")
 
   def _as_variant_tensor(self):
     return gen_dataset_ops.arrow_dataset(self._serialized_batches,
-                                              self._columns,
-                                              nest.flatten(self.output_types),
-                                              nest.flatten(self.output_shapes))
+                                         self._columns,
+                                         nest.flatten(self.output_types),
+                                         nest.flatten(self.output_shapes))
+
+  @classmethod
+  def from_pandas(cls, df, columns, output_types):
+    batch = pa.RecordBatch.from_pandas(df)
+    return cls(batch, columns, output_types)
+
 
 class ArrowFileDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from a file.
