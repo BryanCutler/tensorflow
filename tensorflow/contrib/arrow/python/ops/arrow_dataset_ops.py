@@ -85,8 +85,8 @@ class ArrowDataset(ArrowBaseDataset):
     return cls(batch, columns, output_types)
 
 
-class ArrowFileDataset(ArrowBaseDataset):
-  """An Arrow Dataset for reading record batches from a file.
+class ArrowFeatherDataset(ArrowBaseDataset):
+  """An Arrow Dataset for reading record batches from Arrow feather files.
   """
 
   def __init__(self,
@@ -96,17 +96,17 @@ class ArrowFileDataset(ArrowBaseDataset):
     """Create an ArrowDataset.
 
     Args:
-      filenames: A `tf.string` tensor containing files with Arrow record batches
+      filenames: A `tf.string` tensor containing files in Arrow Feather format
     """
-    super(ArrowFileDataset, self).__init__(columns, output_types)
+    super(ArrowFeatherDataset, self).__init__(columns, output_types)
     self._filenames = ops.convert_to_tensor(
         filenames, dtype=dtypes.string, name="filenames")
   
   def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_file_dataset(self._filenames,
-                                              self._columns,
-                                              nest.flatten(self.output_types),
-                                              nest.flatten(self.output_shapes))
+    return gen_dataset_ops.arrow_feather_dataset(self._filenames,
+                                                 self._columns,
+                                                 nest.flatten(self.output_types),
+                                                 nest.flatten(self.output_shapes))
 
 class ArrowStreamDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from an input stream.

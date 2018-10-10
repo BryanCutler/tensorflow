@@ -16,6 +16,7 @@ flatbuffer_cc_library(
 				"format/Message.fbs",
 				"format/Schema.fbs",
 				"format/Tensor.fbs",
+        "cpp/src/arrow/ipc/feather.fbs",
     ],
     out_prefix = "cpp/src/arrow/ipc/"
 )
@@ -39,7 +40,6 @@ cc_library(
         "cpp/src/arrow/util/compression_zstd.*",
         "cpp/src/arrow/util/compression_lz4.*",
         "cpp/src/arrow/util/compression_brotli.*",
-        "cpp/src/arrow/ipc/feather.*",
         "cpp/src/arrow/ipc/json*",
         "cpp/src/arrow/ipc/stream-to-file.cc",
         "cpp/src/arrow/ipc/file-to-stream.cc",       

@@ -334,11 +334,11 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
 };
 
 
-class ArrowFileDatasetOp : public ArrowOpKernelBase {
+class ArrowFeatherDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
 
-  explicit ArrowFileDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
+  explicit ArrowFeatherDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
 
   virtual void MakeArrowDataset(OpKernelContext* ctx, 
                                 const std::vector<int32>& columns,
@@ -373,10 +373,10 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
       return std::unique_ptr<IteratorBase>(
-          new Iterator({this, strings::StrCat(prefix, "::ArrowFile")}));
+          new Iterator({this, strings::StrCat(prefix, "::ArrowFeather")}));
     }
 
-    string DebugString() const override { return "ArrowFileDatasetOp::Dataset"; }
+    string DebugString() const override { return "ArrowFeatherDatasetOp::Dataset"; }
 
    private:
     class Iterator : public ArrowBaseIterator<Dataset> {
@@ -391,19 +391,38 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
 
       Status SetupStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
         const string& filename = dataset()->filenames_[current_file_idx_];
-        CHECK_ARROW(arrow::io::ReadableFile::Open(filename, &in_file_));
-        CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(in_file_.get(), &reader_));
-        num_batches_ = reader_->num_record_batches();
-        if (num_batches_ > 0) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+        std::shared_ptr<arrow::io::ReadableFile> in_file;
+        CHECK_ARROW(arrow::io::ReadableFile::Open(filename, &in_file));
+        std::unique_ptr<arrow::ipc::feather::TableReader> reader;
+        CHECK_ARROW(arrow::ipc::feather::TableReader::Open(in_file, &reader));
+
+        // Read file columns and build a table
+        int64_t num_columns = reader->num_columns();
+        std::vector<std::shared_ptr<arrow::Field>> fields(num_columns);
+        std::vector<std::shared_ptr<arrow::Column>> columns(num_columns);
+        for (int64_t i = 0; i < num_columns; ++i) {
+          CHECK_ARROW(reader->GetColumn(i, &columns[i]));
+          fields[i] = columns[i]->field();
+        }
+        auto schema = std::make_shared<arrow::Schema>(fields);
+        auto table = arrow::Table::Make(schema, columns);
+
+        // Convert the table to a sequence of batches
+        arrow::TableBatchReader tr(*table.get());
+        std::shared_ptr<arrow::RecordBatch> batch;
+        CHECK_ARROW(tr.ReadNext(&batch));
+        current_batch_ = batch;
+        while (batch != nullptr) {
+          record_batches_.push_back(batch);
+          CHECK_ARROW(tr.ReadNext(&batch));
         }
         return Status::OK();
       }
 
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::NextStreamLocked();
-        if (++current_batch_idx_ < num_batches_) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+        if (++current_batch_idx_ < record_batches_.size()) {
+          current_batch_ = record_batches_[current_batch_idx_];
         } else if (++current_file_idx_ < dataset()->filenames_.size()) {
           size_t temp_file_idx = current_file_idx_;
           ResetStreamsLocked();
@@ -416,17 +435,13 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
       void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::ResetStreamsLocked();
         current_file_idx_ = 0;
-        reader_.reset();
-        in_file_.reset();
         current_batch_idx_ = 0;
-        num_batches_ = 0;
+        record_batches_.clear();
       }
 
       size_t current_file_idx_ GUARDED_BY(mu_) = 0;
-      std::shared_ptr<arrow::io::ReadableFile> in_file_ GUARDED_BY(mu_);
-      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
-      int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
-      int num_batches_ GUARDED_BY(mu_) = 0;
+      size_t current_batch_idx_ GUARDED_BY(mu_) = 0;
+      std::vector<std::shared_ptr<arrow::RecordBatch>> record_batches_ GUARDED_BY(mu_);
     };
 
     const std::vector<string> filenames_;
@@ -514,8 +529,8 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
 REGISTER_KERNEL_BUILDER(Name("ArrowDataset").Device(DEVICE_CPU),
                         ArrowDatasetOp);
 
-REGISTER_KERNEL_BUILDER(Name("ArrowFileDataset").Device(DEVICE_CPU),
-                        ArrowFileDatasetOp);
+REGISTER_KERNEL_BUILDER(Name("ArrowFeatherDataset").Device(DEVICE_CPU),
+                        ArrowFeatherDatasetOp);
 
 REGISTER_KERNEL_BUILDER(Name("ArrowStreamDataset").Device(DEVICE_CPU),
                         ArrowStreamDatasetOp);

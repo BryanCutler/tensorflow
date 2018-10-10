@@ -33,7 +33,7 @@ Creates a dataset that reads serialized Arrow RecordBatches in file format.
 serialized_batches: Serialized Arrow RecordBatches.
 )doc");
 
-REGISTER_OP("ArrowFileDataset")
+REGISTER_OP("ArrowFeatherDataset")
     .Input("filenames: string")
     .Input("columns: int32")
     .Output("handle: variant")
@@ -42,9 +42,9 @@ REGISTER_OP("ArrowFileDataset")
     .SetIsStateful()
     .SetShapeFn(shape_inference::ScalarShape)
     .Doc(R"doc(
-Creates a dataset that reads a file Arrow RecordBatches in file format.
+Creates a dataset that reads files in Arrow Feather format.
 
-filenames: Paths to files that contains Arrow RecordBatches.
+filenames: One or more file paths.
 )doc");
 
 REGISTER_OP("ArrowStreamDataset")

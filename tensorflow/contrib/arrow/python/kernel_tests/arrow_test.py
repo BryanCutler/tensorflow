@@ -24,6 +24,7 @@ import sys
 import tempfile
 
 import pyarrow as pa
+from pyarrow.feather import write_feather
 
 from tensorflow.contrib.arrow.python.ops import arrow_dataset_ops
 from tensorflow.python.data.ops import iterator_ops
@@ -92,37 +93,36 @@ class ArrowDatasetTest(test.TestCase):
 
 
 
-  def testArrowFileDataset(self):
+  def testArrowFeatherDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
 
-    names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
+    names = ["int32", "float32"]
 
     data = [
        [1, 2, 3, 4],
        [1.1, 2.2, 3.3, 4.4],
-       [[1, 1], [2, 2], [3, 3], [4, 4]],
-       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
     ]
 
     arrays = [
         pa.array(data[0], type=pa.int32()),
         pa.array(data[1], type=pa.float32()),
-        pa.array(data[2], type=pa.list_(pa.int32())),
-        pa.array(data[3], type=pa.list_(pa.int32())),
     ]
 
     batch = pa.RecordBatch.from_arrays(arrays, names)
+    df = batch.to_pandas()
+    write_feather(df, f)
+    '''
     writer = pa.RecordBatchFileWriter(f, batch.schema)
     writer.write_batch(batch)
     writer.close()
+    '''
     f.close()
 
-    host = f.name
-    columns = (0, 1, 2, 3)
-    output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
+    columns = (0, 1)
+    output_types = (dtypes.int32, dtypes.float32)
 
-    dataset = arrow_dataset_ops.ArrowFileDataset(
-	host, columns, output_types)
+    dataset = arrow_dataset_ops.ArrowFeatherDataset(
+	f.name, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
@@ -132,8 +132,6 @@ class ArrowDatasetTest(test.TestCase):
         value = sess.run(next_element)
         self.assertEqual(value[0], data[0][row_num])
         self.assertAlmostEqual(value[1], data[1][row_num], 2)
-        self.assertListEqual(value[2].tolist(), data[2][row_num])
-        self.assertListEqual(value[3].tolist(), data[3][row_num])
 
     os.unlink(f.name)
 
