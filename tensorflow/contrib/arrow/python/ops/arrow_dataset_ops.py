@@ -90,20 +90,20 @@ class ArrowFileDataset(ArrowBaseDataset):
   """
 
   def __init__(self,
-               filename,
+               filenames,
                columns,
                output_types):
     """Create an ArrowDataset.
 
     Args:
-      filename: A `tf.string` tensor containing a file with Arrow record batches
+      filenames: A `tf.string` tensor containing files with Arrow record batches
     """
     super(ArrowFileDataset, self).__init__(columns, output_types)
-    self._filename = ops.convert_to_tensor(
-        filename, dtype=dtypes.string, name="filename")
+    self._filenames = ops.convert_to_tensor(
+        filenames, dtype=dtypes.string, name="filenames")
   
   def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_file_dataset(self._filename,
+    return gen_dataset_ops.arrow_file_dataset(self._filenames,
                                               self._columns,
                                               nest.flatten(self.output_types),
                                               nest.flatten(self.output_shapes))

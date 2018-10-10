@@ -334,7 +334,6 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
 };
 
 
-
 class ArrowFileDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
@@ -346,25 +345,29 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
                                 const DataTypeVector& output_types,
                                 const std::vector<PartialTensorShape>& output_shapes,
                                 DatasetBase** output) override {
-    const Tensor* filename_tensor;
-    OP_REQUIRES_OK(ctx, ctx->input("filename", &filename_tensor));
-    OP_REQUIRES(ctx, filename_tensor->dims() == 0,
-       errors::InvalidArgument("`filename` must be a scalar.")); 
-    string filename = filename_tensor->flat<string>()(0);
+    const Tensor* filenames_tensor;
+    OP_REQUIRES_OK(ctx, ctx->input("filenames", &filenames_tensor));
+    OP_REQUIRES(ctx, filenames_tensor->dims() <= 1,
+       errors::InvalidArgument("`filename` must be a scalar or vector."));
+    std::vector<string> filenames;
+    filenames.reserve(filenames_tensor->NumElements());
+    for (int i = 0; i < filenames_tensor->NumElements(); ++i) {
+      filenames.push_back(filenames_tensor->flat<string>()(i));
+    }
 
-    *output = new Dataset(ctx, filename, columns, output_types_, output_shapes_);
+    *output = new Dataset(ctx, filenames, columns, output_types_, output_shapes_);
   }
 
  private:
   class Dataset : public ArrowDatasetBase {
    public:
     Dataset(OpKernelContext* ctx,
-            const string& filename,
+            const std::vector<string>& filenames,
             const std::vector<int32>& columns,
             const DataTypeVector& output_types,
             const std::vector<PartialTensorShape>& output_shapes)
         : ArrowDatasetBase(ctx, columns, output_types, output_shapes),
-          filename_(filename) {}
+          filenames_(filenames) {}
 
    protected:
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
@@ -383,7 +386,12 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
 
      private:
       Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
-        CHECK_ARROW(arrow::io::ReadableFile::Open(dataset()->filename_, &in_file_));
+        return SetupStreamsLocked();
+      }
+
+      Status SetupStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+        const string& filename = dataset()->filenames_[current_file_idx_];
+        CHECK_ARROW(arrow::io::ReadableFile::Open(filename, &in_file_));
         CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(in_file_.get(), &reader_));
         num_batches_ = reader_->num_record_batches();
         if (num_batches_ > 0) {
@@ -394,28 +402,34 @@ class ArrowFileDatasetOp : public ArrowOpKernelBase {
 
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::NextStreamLocked();
-        if (current_batch_idx_ < num_batches_) {
+        if (++current_batch_idx_ < num_batches_) {
           CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
-          ++current_batch_idx_;
+        } else if (++current_file_idx_ < dataset()->filenames_.size()) {
+          size_t temp_file_idx = current_file_idx_;
+          ResetStreamsLocked();
+          current_file_idx_ = temp_file_idx;
+          SetupStreamsLocked();
         }
         return Status::OK();
       }
 
       void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::ResetStreamsLocked();
+        current_file_idx_ = 0;
         reader_.reset();
         in_file_.reset();
         current_batch_idx_ = 0;
         num_batches_ = 0;
       }
 
+      size_t current_file_idx_ GUARDED_BY(mu_) = 0;
       std::shared_ptr<arrow::io::ReadableFile> in_file_ GUARDED_BY(mu_);
       std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
       int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
       int num_batches_ GUARDED_BY(mu_) = 0;
     };
 
-    const string filename_;
+    const std::vector<string> filenames_;
   };
 };
 

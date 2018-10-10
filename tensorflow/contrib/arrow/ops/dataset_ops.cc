@@ -34,7 +34,7 @@ serialized_batches: Serialized Arrow RecordBatches.
 )doc");
 
 REGISTER_OP("ArrowFileDataset")
-    .Input("filename: string")
+    .Input("filenames: string")
     .Input("columns: int32")
     .Output("handle: variant")
     .Attr("output_types: list(type) >= 1")
@@ -44,7 +44,7 @@ REGISTER_OP("ArrowFileDataset")
     .Doc(R"doc(
 Creates a dataset that reads a file Arrow RecordBatches in file format.
 
-filename: Path to a file that contains Arrow RecordBatches.
+filenames: Paths to files that contains Arrow RecordBatches.
 )doc");
 
 REGISTER_OP("ArrowStreamDataset")
