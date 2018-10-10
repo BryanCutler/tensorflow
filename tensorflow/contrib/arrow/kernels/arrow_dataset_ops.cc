@@ -309,9 +309,8 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
 
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::NextStreamLocked();
-        if (current_batch_idx_ < num_batches_) {
+        if (++current_batch_idx_ < num_batches_) {
           CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
-          ++current_batch_idx_;
         }
         return Status::OK();
       }
@@ -323,9 +322,8 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
         num_batches_ = 0;
       }
 
-      //arrow::io::BufferReader buffer_reader_ GUARDED_BY(mu_);
       std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
-      int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
+      int current_batch_idx_ GUARDED_BY(mu_) = 0;
       int num_batches_ GUARDED_BY(mu_) = 0;
     };
 
