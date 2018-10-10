@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import io
 import os
 import subprocess
 import sys
@@ -37,6 +38,46 @@ class ArrowDatasetTest(test.TestCase):
 
   def setUp(self):
     pass
+
+  def testArrowDataset(self):
+    names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
+
+    data = [
+       [1, 2, 3, 4],
+       [1.1, 2.2, 3.3, 4.4],
+       [[1, 1], [2, 2], [3, 3], [4, 4]],
+       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
+    ]
+
+    arrays = [
+        pa.array(data[0], type=pa.int32()),
+        pa.array(data[1], type=pa.float32()),
+        pa.array(data[2], type=pa.list_(pa.int32())),
+        pa.array(data[3], type=pa.list_(pa.int32())),
+    ]
+
+    buf = io.BytesIO()
+    batch = pa.RecordBatch.from_arrays(arrays, names)
+    writer = pa.RecordBatchFileWriter(buf, batch.schema)
+    writer.write_batch(batch)
+    writer.close()
+
+    columns = (0, 1, 2, 3)
+    output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
+
+    dataset = arrow_dataset_ops.ArrowDataset(
+            buf.getvalue(), columns, output_types)
+
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
+
+    with self.test_session() as sess:
+      for row_num in range(len(data[0])):
+        value = sess.run(next_element)
+        self.assertEqual(value[0], data[0][row_num])
+        self.assertAlmostEqual(value[1], data[1][row_num], 2)
+        self.assertListEqual(value[2].tolist(), data[2][row_num])
+        self.assertListEqual(value[3].tolist(), data[3][row_num])
 
   def testArrowFileDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)

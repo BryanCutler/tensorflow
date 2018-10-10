@@ -44,6 +44,30 @@ class ArrowBaseDataset(Dataset):
   def output_types(self):
     return self._output_types
 
+class ArrowDataset(ArrowBaseDataset):
+  """An Arrow Dataset for reading record batches from a file.
+  """
+
+  def __init__(self,
+               data,
+               columns,
+               output_types):
+    """Create an ArrowDataset.
+
+    Args:
+      filename: A `tf.string` tensor containing a file with Arrow record batches
+    """
+    super(ArrowDataset, self).__init__(columns, output_types)
+
+    self._serialized_batches = ops.convert_to_tensor(
+        data, dtype=dtypes.string, name="serialized_batches")
+
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.arrow_dataset(self._serialized_batches,
+                                              self._columns,
+                                              nest.flatten(self.output_types),
+                                              nest.flatten(self.output_shapes))
+
 class ArrowFileDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from a file.
   """

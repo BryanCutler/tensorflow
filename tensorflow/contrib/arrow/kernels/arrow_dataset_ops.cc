@@ -248,6 +248,93 @@ class ArrowOpKernelBase : public DatasetOpKernel {
 };
 
 
+class ArrowDatasetOp : public ArrowOpKernelBase {
+ public:
+  using DatasetOpKernel::DatasetOpKernel;
+
+  explicit ArrowDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
+
+  virtual void MakeArrowDataset(OpKernelContext* ctx,
+                                const std::vector<int32>& columns,
+                                const DataTypeVector& output_types,
+                                const std::vector<PartialTensorShape>& output_shapes,
+                                DatasetBase** output) override {
+    const Tensor* batches_tensor;
+    OP_REQUIRES_OK(ctx, ctx->input("serialized_batches", &batches_tensor));
+    OP_REQUIRES(ctx, batches_tensor->dims() <= 0,
+       errors::InvalidArgument("`serialized_batches` must be a scalar."));
+    string batches = batches_tensor->flat<string>()(0);
+
+    *output = new Dataset(ctx, batches, columns, output_types_, output_shapes_);
+  }
+
+ private:
+  class Dataset : public ArrowDatasetBase {
+   public:
+    Dataset(OpKernelContext* ctx,
+            const string& batches,
+            const std::vector<int32>& columns,
+            const DataTypeVector& output_types,
+            const std::vector<PartialTensorShape>& output_shapes)
+        : ArrowDatasetBase(ctx, columns, output_types, output_shapes),
+          batches_(batches) {}
+
+   protected:
+    std::unique_ptr<IteratorBase> MakeIteratorInternal(
+        const string& prefix) const override {
+      return std::unique_ptr<IteratorBase>(
+          new Iterator({this, strings::StrCat(prefix, "::Arrow")}));
+    }
+
+    string DebugString() const override { return "ArrowDatasetOp::Dataset"; }
+
+   private:
+    class Iterator : public ArrowBaseIterator<Dataset> {
+     public:
+      explicit Iterator(const Params& params)
+          : ArrowBaseIterator<Dataset>(params) {}
+
+     private:
+      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        std::shared_ptr<arrow::Buffer> buffer;
+        CHECK_ARROW(arrow::Buffer::FromString(dataset()->batches_, &buffer));
+        auto buffer_reader = std::make_shared<arrow::io::BufferReader>(buffer);
+        CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(buffer_reader, &reader_));
+        num_batches_ = reader_->num_record_batches();
+        if (num_batches_ > 0) {
+          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+        }
+        return Status::OK();
+      }
+
+      Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        ArrowBaseIterator<Dataset>::NextStreamLocked();
+        if (current_batch_idx_ < num_batches_) {
+          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+          ++current_batch_idx_;
+        }
+        return Status::OK();
+      }
+
+      void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+        ArrowBaseIterator<Dataset>::ResetStreamsLocked();
+        reader_.reset();
+        current_batch_idx_ = 0;
+        num_batches_ = 0;
+      }
+
+      //arrow::io::BufferReader buffer_reader_ GUARDED_BY(mu_);
+      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
+      int64_t current_batch_idx_ GUARDED_BY(mu_) = 0;
+      int num_batches_ GUARDED_BY(mu_) = 0;
+    };
+
+    const string batches_;
+  };
+};
+
+
+
 class ArrowFileDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
@@ -409,6 +496,9 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
   };
 };
 
+
+REGISTER_KERNEL_BUILDER(Name("ArrowDataset").Device(DEVICE_CPU),
+                        ArrowDatasetOp);
 
 REGISTER_KERNEL_BUILDER(Name("ArrowFileDataset").Device(DEVICE_CPU),
                         ArrowFileDatasetOp);
