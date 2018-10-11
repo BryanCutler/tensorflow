@@ -32,7 +32,7 @@ namespace tensorflow {
 class ArrowConvertTensor : public arrow::ArrayVisitor {
  public:
   ArrowConvertTensor(int64_t row_idx, IteratorContext* ctx) 
-    : curr_row_idx_(row_idx), curr_ctx_(ctx), curr_values_length_(1) {}
+    : curr_row_idx_(row_idx), curr_ctx_(ctx), curr_array_values_(-1) {}
 
   Status AppendTensor(std::shared_ptr<arrow::Array> array,
                       DataType output_type,
@@ -49,13 +49,9 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   template <typename ArrayType>
   arrow::Status VisitFixedWidth(const ArrayType& array) {
     // TODO check type is correct
-    //int shape_scalar[] = {};
-    //int shape_vector[] = {curr_values_length_};
-
-    Tensor tensor(curr_ctx_->allocator({}),
-        curr_type_, {curr_values_length_});
-        //curr_type_, curr_values_length_ == 0 ? shape_scalar : shape_vector);
-        //curr_values_length_ == 1 ? {} : {values_length}); TODO need scalar
+    // Create a Tensor of required size, curr_array_values_ < 0 indicates scalar
+    Tensor tensor(curr_ctx_->allocator({}), curr_type_,
+        curr_array_values_ < 0 ? TensorShape({}) : TensorShape({curr_array_values_}));
 
     const auto& fw_type = static_cast<const arrow::FixedWidthType&>(*array.type());
     const int64_t type_width = fw_type.bit_width() / 8;
@@ -65,7 +61,8 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
       const void* src = (values->data() + array.data()->offset * type_width) +
         curr_row_idx_ * type_width;
       void* dst = const_cast<char*>(tensor.tensor_data().data());
-      std::memcpy(dst, src, curr_values_length_ * type_width);
+      int32_t num_values = curr_array_values_ < 0 ? 1 : curr_array_values_;
+      std::memcpy(dst, src, num_values * type_width);
     }
 
     out_tensors_->emplace_back(std::move(tensor));
@@ -91,15 +88,15 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   virtual arrow::Status Visit(const arrow::ListArray& array) override {
     // TODO check if another array
     int32 values_offset = array.value_offset(curr_row_idx_);
-    curr_values_length_ = array.value_length(curr_row_idx_);
+    curr_array_values_ = array.value_length(curr_row_idx_);
     int32 tmp_row_idx = curr_row_idx_;
     curr_row_idx_ = 0;
 
     std::shared_ptr<arrow::Array> values = array.values();
-    std::shared_ptr<arrow::Array> element_values = values->Slice(values_offset, curr_values_length_);
+    std::shared_ptr<arrow::Array> element_values = values->Slice(values_offset, curr_array_values_);
     auto result = element_values->Accept(this);
     curr_row_idx_ = tmp_row_idx;
-    curr_values_length_ = 1;
+    curr_array_values_ = -1;
     return result;
   }
 
@@ -107,7 +104,7 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   int64_t curr_row_idx_;
   DataType curr_type_;
   IteratorContext* curr_ctx_;
-  int32 curr_values_length_;
+  int32_t curr_array_values_;
   std::vector<Tensor> *out_tensors_;
 };
 
