@@ -29,6 +29,28 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 
 
+def arrow_to_tensor_type(pa_t):
+  if pa.types.is_int32(pa_t):
+    tf_t = dtypes.int32
+  elif pa.types.is_int64(pa_t):
+    tf_t = dtypes.int64
+  elif pa.types.is_float32(pa_t):
+    tf_t = dtypes.float32
+  elif pa.types.is_float64(pa_t):
+    tf_t = dtypes.float64
+  elif pa.types.is_list(pa_t):
+    if pa.types.is_list(pa_t.value_type):
+      raise TypeError("Nested arrays are not supported: " + str(pa_t))
+    tf_t = arrow_to_tensor_type(pa_t.value_type)
+  else:
+    raise TypeError("Unsupported type in conversion from Arrow: " + str(pa_t))
+  return tf_t
+
+
+def arrow_schema_to_tensor_types(schema):
+  return tuple([arrow_to_tensor_type(field.type) for field in schema])
+
+
 class ArrowBaseDataset(Dataset):
 
   def __init__(self, columns, output_types):
@@ -41,6 +63,7 @@ class ArrowBaseDataset(Dataset):
 
   @property
   def output_shapes(self):
+    # TODO what about array types?
     return nest.map_structure(lambda _: tensor_shape.TensorShape([]), self._output_types)
 
   @property
@@ -80,8 +103,12 @@ class ArrowDataset(ArrowBaseDataset):
                                          nest.flatten(self.output_shapes))
 
   @classmethod
-  def from_pandas(cls, df, columns, output_types):
-    batch = pa.RecordBatch.from_pandas(df)
+  def from_pandas(cls, df, columns=None, preserve_index=True):
+    if columns is not None:
+      df = df[columns]
+    batch = pa.RecordBatch.from_pandas(df, preserve_index=preserve_index)
+    columns = tuple(range(len(df.columns)))
+    output_types = arrow_schema_to_tensor_types(batch.schema)
     return cls(batch, columns, output_types)
 
 

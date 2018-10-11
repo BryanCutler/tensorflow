@@ -40,7 +40,6 @@ class ArrowDatasetTest(test.TestCase):
     pass
 
   def testArrowDataset(self):
-    names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
 
     data = [
        [1, 2, 3, 4],
@@ -56,9 +55,10 @@ class ArrowDatasetTest(test.TestCase):
         pa.array(data[3], type=pa.list_(pa.int32())),
     ]
 
+    names = ["%s_[%s]" % (i, a.type) for i, a in enumerate(arrays)]
     batch = pa.RecordBatch.from_arrays(arrays, names)
 
-    columns = (0, 1, 2, 3)
+    columns = tuple(range(len(arrays)))
     output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
 
     dataset = arrow_dataset_ops.ArrowDataset(
@@ -77,8 +77,7 @@ class ArrowDatasetTest(test.TestCase):
 
     df = batch.to_pandas()
 
-    dataset = arrow_dataset_ops.ArrowDataset.from_pandas(
-            df, columns, output_types)
+    dataset = arrow_dataset_ops.ArrowDataset.from_pandas(df, preserve_index=False)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
@@ -90,7 +89,6 @@ class ArrowDatasetTest(test.TestCase):
         self.assertAlmostEqual(value[1], data[1][row_num], 2)
         self.assertListEqual(value[2].tolist(), data[2][row_num])
         self.assertListEqual(value[3].tolist(), data[3][row_num])
-
 
 
   def testArrowFeatherDataset(self):

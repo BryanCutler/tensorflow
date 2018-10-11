@@ -29,7 +29,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-
 class ArrowConvertTensor : public arrow::ArrayVisitor {
  public:
   ArrowConvertTensor(int64_t row_idx, IteratorContext* ctx) 
@@ -50,18 +49,23 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   template <typename ArrayType>
   arrow::Status VisitFixedWidth(const ArrayType& array) {
     // TODO check type is correct
+    //int shape_scalar[] = {};
+    //int shape_vector[] = {curr_values_length_};
+
     Tensor tensor(curr_ctx_->allocator({}),
         curr_type_, {curr_values_length_});
+        //curr_type_, curr_values_length_ == 0 ? shape_scalar : shape_vector);
         //curr_values_length_ == 1 ? {} : {values_length}); TODO need scalar
 
-    // TODO
-    int32 type_bit_width = 4;
+    const auto& fw_type = static_cast<const arrow::FixedWidthType&>(*array.type());
+    const int64_t type_width = fw_type.bit_width() / 8;
 
     auto values = array.data()->buffers[1];
     if (values != NULLPTR) {
-      const void* src = (values->data() + array.data()->offset * type_bit_width) + curr_row_idx_ * type_bit_width;
+      const void* src = (values->data() + array.data()->offset * type_width) +
+        curr_row_idx_ * type_width;
       void* dst = const_cast<char*>(tensor.tensor_data().data());
-      std::memcpy(dst, src, curr_values_length_ * type_bit_width);
+      std::memcpy(dst, src, curr_values_length_ * type_width);
     }
 
     out_tensors_->emplace_back(std::move(tensor));
@@ -71,8 +75,17 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
 #define VISIT_FIXED_WIDTH(TYPE) \
   virtual arrow::Status Visit(const TYPE& array) override { return VisitFixedWidth(array); }
 
+  VISIT_FIXED_WIDTH(arrow::Int8Array)
+  VISIT_FIXED_WIDTH(arrow::Int16Array)
   VISIT_FIXED_WIDTH(arrow::Int32Array)
+  VISIT_FIXED_WIDTH(arrow::Int64Array)
+  VISIT_FIXED_WIDTH(arrow::UInt8Array)
+  VISIT_FIXED_WIDTH(arrow::UInt16Array)
+  VISIT_FIXED_WIDTH(arrow::UInt32Array)
+  VISIT_FIXED_WIDTH(arrow::UInt64Array)
+  VISIT_FIXED_WIDTH(arrow::HalfFloatArray)
   VISIT_FIXED_WIDTH(arrow::FloatArray)
+  VISIT_FIXED_WIDTH(arrow::DoubleArray)
 #undef VISIT_FIXED_WITH
 
   virtual arrow::Status Visit(const arrow::ListArray& array) override {
