@@ -62,4 +62,3 @@ host: A host address that is serving an Arrow stream.
 )doc");
 
 }  // namespace tensorflow
-

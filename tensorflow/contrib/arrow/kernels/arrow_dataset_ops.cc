@@ -14,22 +14,22 @@ limitations under the License.
 ==============================================================================*/
 
 // TODO posix specific
-#include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 
-#include "tensorflow/core/framework/dataset.h"
 #include "arrow/api.h"
 #include "arrow/io/api.h"
 #include "arrow/ipc/api.h"
 #include "arrow/util/io-util.h"
+#include "tensorflow/core/framework/dataset.h"
 
-#define CHECK_ARROW(arrow_status)              \
-  do {                                         \
-     arrow::Status _s = (arrow_status);        \
-     if (!_s.ok()) {                           \
-       return errors::Internal(_s.ToString()); \
-     }                                         \
-  } while (false)                              \
+#define CHECK_ARROW(arrow_status)             \
+  do {                                        \
+    arrow::Status _s = (arrow_status);        \
+    if (!_s.ok()) {                           \
+      return errors::Internal(_s.ToString()); \
+    }                                         \
+  } while (false)
 
 namespace tensorflow {
 
@@ -51,7 +51,7 @@ class SocketStream : public arrow::io::InputStream {
 
   arrow::Status Read(int64_t nbytes, int64_t* bytes_read, void* out) override {
     int status = recv(sock_, out, nbytes, MSG_WAITALL);
-    //if (status == 0) socket closed
+    // if (status == 0) socket closed
     if (status == -1) {
       return arrow::Status::IOError("error reading from socket");
     }
@@ -60,7 +60,8 @@ class SocketStream : public arrow::io::InputStream {
     return arrow::Status::OK();
   }
 
-  arrow::Status Read(int64_t nbytes, std::shared_ptr<arrow::Buffer>* out) override {
+  arrow::Status Read(int64_t nbytes,
+                     std::shared_ptr<arrow::Buffer>* out) override {
     std::shared_ptr<arrow::ResizableBuffer> buffer;
     ARROW_RETURN_NOT_OK(arrow::AllocateResizableBuffer(nbytes, &buffer));
     int64_t bytes_read;
@@ -76,16 +77,14 @@ class SocketStream : public arrow::io::InputStream {
   int64_t pos_;
 };
 
-
 // Convert an element of an Arrow Array to a Tensor
 class ArrowConvertTensor : public arrow::ArrayVisitor {
  public:
-  ArrowConvertTensor(int64_t row_idx, IteratorContext* ctx) 
-    : curr_row_idx_(row_idx), curr_ctx_(ctx), curr_array_values_(-1) {}
+  ArrowConvertTensor(int64_t row_idx, IteratorContext* ctx)
+      : curr_row_idx_(row_idx), curr_ctx_(ctx), curr_array_values_(-1) {}
 
   // Convert to a Tensor and append to the output vector
-  Status AppendTensor(std::shared_ptr<arrow::Array> array,
-                      DataType output_type,
+  Status AppendTensor(std::shared_ptr<arrow::Array> array, DataType output_type,
                       std::vector<Tensor>* out_tensors) {
     curr_type_ = output_type;
     out_tensors_ = out_tensors;
@@ -95,21 +94,22 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   }
 
  protected:
-
   template <typename ArrayType>
   arrow::Status VisitFixedWidth(const ArrayType& array) {
     // TODO check type is correct
     // Create a Tensor of required size, curr_array_values_ < 0 indicates scalar
     Tensor tensor(curr_ctx_->allocator({}), curr_type_,
-        curr_array_values_ < 0 ? TensorShape({}) : TensorShape({curr_array_values_}));
+                  curr_array_values_ < 0 ? TensorShape({})
+                                         : TensorShape({curr_array_values_}));
 
-    const auto& fw_type = static_cast<const arrow::FixedWidthType&>(*array.type());
+    const auto& fw_type =
+        static_cast<const arrow::FixedWidthType&>(*array.type());
     const int64_t type_width = fw_type.bit_width() / 8;
 
     auto values = array.data()->buffers[1];
     if (values != NULLPTR) {
       const void* src = (values->data() + array.data()->offset * type_width) +
-        curr_row_idx_ * type_width;
+                        curr_row_idx_ * type_width;
       void* dst = const_cast<char*>(tensor.tensor_data().data());
       int32_t num_values = curr_array_values_ < 0 ? 1 : curr_array_values_;
       std::memcpy(dst, src, num_values * type_width);
@@ -119,8 +119,10 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
     return arrow::Status::OK();
   }
 
-#define VISIT_FIXED_WIDTH(TYPE) \
-  virtual arrow::Status Visit(const TYPE& array) override { return VisitFixedWidth(array); }
+#define VISIT_FIXED_WIDTH(TYPE)                             \
+  virtual arrow::Status Visit(const TYPE& array) override { \
+    return VisitFixedWidth(array);                          \
+  }
 
   VISIT_FIXED_WIDTH(arrow::Int8Array)
   VISIT_FIXED_WIDTH(arrow::Int16Array)
@@ -143,7 +145,8 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
     curr_row_idx_ = 0;
 
     std::shared_ptr<arrow::Array> values = array.values();
-    std::shared_ptr<arrow::Array> element_values = values->Slice(values_offset, curr_array_values_);
+    std::shared_ptr<arrow::Array> element_values =
+        values->Slice(values_offset, curr_array_values_);
     auto result = element_values->Accept(this);
     curr_row_idx_ = tmp_row_idx;
     curr_array_values_ = -1;
@@ -155,16 +158,14 @@ class ArrowConvertTensor : public arrow::ArrayVisitor {
   DataType curr_type_;
   IteratorContext* curr_ctx_;
   int32_t curr_array_values_;
-  std::vector<Tensor> *out_tensors_;
+  std::vector<Tensor>* out_tensors_;
 };
-
 
 // Base class for defining a Dataset over Arrow record batches with an
 // iterator that iterates over rows of the batch to get Tensors
 class ArrowDatasetBase : public DatasetBase {
  public:
-  ArrowDatasetBase(OpKernelContext* ctx,
-                   const std::vector<int32>& columns,
+  ArrowDatasetBase(OpKernelContext* ctx, const std::vector<int32>& columns,
                    const DataTypeVector& output_types,
                    const std::vector<PartialTensorShape>& output_shapes)
       : DatasetBase(DatasetContext(ctx)),
@@ -172,16 +173,13 @@ class ArrowDatasetBase : public DatasetBase {
         output_types_(output_types),
         output_shapes_(output_shapes) {}
 
-  const DataTypeVector& output_dtypes() const override {
-    return output_types_;
-  }
+  const DataTypeVector& output_dtypes() const override { return output_types_; }
 
   const std::vector<PartialTensorShape>& output_shapes() const override {
     return output_shapes_;
   }
 
  protected:
-    
   Status AsGraphDefInternal(SerializationContext* ctx,
                             DatasetGraphDefBuilder* b,
                             Node** output) const override {
@@ -194,7 +192,9 @@ class ArrowDatasetBase : public DatasetBase {
   template <typename DatasetType>
   class ArrowBaseIterator : public DatasetIterator<DatasetType> {
    public:
-    ArrowBaseIterator(const typename DatasetIterator<DatasetType>::Params& params) : DatasetIterator<DatasetType>(params) {}
+    ArrowBaseIterator(
+        const typename DatasetIterator<DatasetType>::Params& params)
+        : DatasetIterator<DatasetType>(params) {}
 
     Status GetNextInternal(IteratorContext* ctx,
                            std::vector<Tensor>* out_tensors,
@@ -228,7 +228,7 @@ class ArrowDatasetBase : public DatasetBase {
 
       // Increment to next row
       ++current_row_idx_;
-      *end_of_sequence = false;        
+      *end_of_sequence = false;
 
       return Status::OK();
     }
@@ -240,11 +240,13 @@ class ArrowDatasetBase : public DatasetBase {
 
     Status RestoreInternal(IteratorContext* ctx,
                            IteratorStateReader* reader) override {
-      return errors::Unimplemented("RestoreInternal is currently not supported");      
+      return errors::Unimplemented(
+          "RestoreInternal is currently not supported");
     }
 
     // Setup Arrow record batch consumer and initialze current_batch_
-    virtual Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) = 0;
+    virtual Status SetupStreamsLocked(Env* env)
+        EXCLUSIVE_LOCKS_REQUIRED(mu_) = 0;
 
     // Get the next Arrow record batch, if available. If not then
     // current_batch_ will be set to nullptr to indicate no further batches.
@@ -261,7 +263,8 @@ class ArrowDatasetBase : public DatasetBase {
     }
 
     mutex mu_;
-    std::shared_ptr<arrow::RecordBatch> current_batch_ GUARDED_BY(mu_) = nullptr;
+    std::shared_ptr<arrow::RecordBatch> current_batch_ GUARDED_BY(mu_) =
+        nullptr;
     int64_t current_row_idx_ GUARDED_BY(mu_) = 0;
   };
 
@@ -269,7 +272,6 @@ class ArrowDatasetBase : public DatasetBase {
   const DataTypeVector output_types_;
   const std::vector<PartialTensorShape> output_shapes_;
 };
-
 
 // Abstract base class to define an Arrow OpKernel with output_types and
 // output_shapes attributes, and list of column indices. Implementations
@@ -291,31 +293,31 @@ class ArrowOpKernelBase : public DatasetOpKernel {
     OP_REQUIRES(
         ctx, columns_tensor->dims() <= 1,
         errors::InvalidArgument("`columns` must be a scalar or a vector."));
-    
+
     std::vector<int32> columns;
     columns.reserve(columns_tensor->NumElements());
-    for (int32 i = 0; i < static_cast<int32>(columns_tensor->NumElements()); ++i) {
+    for (int32 i = 0; i < static_cast<int32>(columns_tensor->NumElements());
+         ++i) {
       columns.push_back(columns_tensor->flat<int32>()(i));
     }
 
-    ArrowDatasetBase *arrow_output;
-    MakeArrowDataset(ctx, columns, output_types_, output_shapes_, &arrow_output);
+    ArrowDatasetBase* arrow_output;
+    MakeArrowDataset(ctx, columns, output_types_, output_shapes_,
+                     &arrow_output);
     *output = arrow_output;
   }
 
  protected:
-
   // Define to construct an implementation of ArrowDatasetBase
-  virtual void MakeArrowDataset(OpKernelContext* ctx, 
-                                const std::vector<int32>& columns,
-                                const DataTypeVector& output_types,
-                                const std::vector<PartialTensorShape>& output_shapes,
-                                ArrowDatasetBase** output) = 0;
+  virtual void MakeArrowDataset(
+      OpKernelContext* ctx, const std::vector<int32>& columns,
+      const DataTypeVector& output_types,
+      const std::vector<PartialTensorShape>& output_shapes,
+      ArrowDatasetBase** output) = 0;
 
   DataTypeVector output_types_;
   std::vector<PartialTensorShape> output_shapes_;
 };
-
 
 // Op to create an ArrowDataset that consumes Arrow record batches from
 // memory in a Python process, or a Pandas DataFrame.
@@ -325,15 +327,16 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
 
   explicit ArrowDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
 
-  virtual void MakeArrowDataset(OpKernelContext* ctx,
-                                const std::vector<int32>& columns,
-                                const DataTypeVector& output_types,
-                                const std::vector<PartialTensorShape>& output_shapes,
-                                ArrowDatasetBase** output) override {
+  virtual void MakeArrowDataset(
+      OpKernelContext* ctx, const std::vector<int32>& columns,
+      const DataTypeVector& output_types,
+      const std::vector<PartialTensorShape>& output_shapes,
+      ArrowDatasetBase** output) override {
     const Tensor* batches_tensor;
     OP_REQUIRES_OK(ctx, ctx->input("serialized_batches", &batches_tensor));
-    OP_REQUIRES(ctx, batches_tensor->dims() <= 0,
-       errors::InvalidArgument("`serialized_batches` must be a scalar."));
+    OP_REQUIRES(
+        ctx, batches_tensor->dims() <= 0,
+        errors::InvalidArgument("`serialized_batches` must be a scalar."));
     string batches = batches_tensor->flat<string>()(0);
 
     *output = new Dataset(ctx, batches, columns, output_types_, output_shapes_);
@@ -342,11 +345,9 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
  private:
   class Dataset : public ArrowDatasetBase {
    public:
-
     // Construct a Dataset that consumed Arrow batches from serialized bytes
     // in a string. Record batches should be serialized in Arrow File format.
-    Dataset(OpKernelContext* ctx,
-            const string& serialized_batches,
+    Dataset(OpKernelContext* ctx, const string& serialized_batches,
             const std::vector<int32>& columns,
             const DataTypeVector& output_types,
             const std::vector<PartialTensorShape>& output_shapes)
@@ -369,14 +370,17 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
           : ArrowBaseIterator<Dataset>(params) {}
 
      private:
-      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+      Status SetupStreamsLocked(Env* env)
+          EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         std::shared_ptr<arrow::Buffer> buffer;
         CHECK_ARROW(arrow::Buffer::FromString(dataset()->batches_, &buffer));
         auto buffer_reader = std::make_shared<arrow::io::BufferReader>(buffer);
-        CHECK_ARROW(arrow::ipc::RecordBatchFileReader::Open(buffer_reader, &reader_));
+        CHECK_ARROW(
+            arrow::ipc::RecordBatchFileReader::Open(buffer_reader, &reader_));
         num_batches_ = reader_->num_record_batches();
         if (num_batches_ > 0) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+          CHECK_ARROW(
+              reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
         }
         return Status::OK();
       }
@@ -384,7 +388,8 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
       Status NextStreamLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         ArrowBaseIterator<Dataset>::NextStreamLocked();
         if (++current_batch_idx_ < num_batches_) {
-          CHECK_ARROW(reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
+          CHECK_ARROW(
+              reader_->ReadRecordBatch(current_batch_idx_, &current_batch_));
         }
         return Status::OK();
       }
@@ -396,7 +401,8 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
         num_batches_ = 0;
       }
 
-      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_ GUARDED_BY(mu_);
+      std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader_
+          GUARDED_BY(mu_);
       int current_batch_idx_ GUARDED_BY(mu_) = 0;
       int num_batches_ GUARDED_BY(mu_) = 0;
     };
@@ -405,7 +411,6 @@ class ArrowDatasetOp : public ArrowOpKernelBase {
   };
 };
 
-
 // Op to create an Arrow Dataset that consumes record batches from a list of
 // files in Arrow Feather format. Feather is a light-weight columnar format
 // ideal for simple writing of Pandas DataFrames.
@@ -413,31 +418,33 @@ class ArrowFeatherDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
 
-  explicit ArrowFeatherDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
+  explicit ArrowFeatherDatasetOp(OpKernelConstruction* ctx)
+      : ArrowOpKernelBase(ctx) {}
 
-  virtual void MakeArrowDataset(OpKernelContext* ctx, 
-                                const std::vector<int32>& columns,
-                                const DataTypeVector& output_types,
-                                const std::vector<PartialTensorShape>& output_shapes,
-                                ArrowDatasetBase** output) override {
+  virtual void MakeArrowDataset(
+      OpKernelContext* ctx, const std::vector<int32>& columns,
+      const DataTypeVector& output_types,
+      const std::vector<PartialTensorShape>& output_shapes,
+      ArrowDatasetBase** output) override {
     const Tensor* filenames_tensor;
     OP_REQUIRES_OK(ctx, ctx->input("filenames", &filenames_tensor));
-    OP_REQUIRES(ctx, filenames_tensor->dims() <= 1,
-       errors::InvalidArgument("`filename` must be a scalar or vector."));
+    OP_REQUIRES(
+        ctx, filenames_tensor->dims() <= 1,
+        errors::InvalidArgument("`filename` must be a scalar or vector."));
     std::vector<string> filenames;
     filenames.reserve(filenames_tensor->NumElements());
     for (int i = 0; i < filenames_tensor->NumElements(); ++i) {
       filenames.push_back(filenames_tensor->flat<string>()(i));
     }
 
-    *output = new Dataset(ctx, filenames, columns, output_types_, output_shapes_);
+    *output =
+        new Dataset(ctx, filenames, columns, output_types_, output_shapes_);
   }
 
  private:
   class Dataset : public ArrowDatasetBase {
    public:
-    Dataset(OpKernelContext* ctx,
-            const std::vector<string>& filenames,
+    Dataset(OpKernelContext* ctx, const std::vector<string>& filenames,
             const std::vector<int32>& columns,
             const DataTypeVector& output_types,
             const std::vector<PartialTensorShape>& output_shapes)
@@ -451,7 +458,9 @@ class ArrowFeatherDatasetOp : public ArrowOpKernelBase {
           new Iterator({this, strings::StrCat(prefix, "::ArrowFeather")}));
     }
 
-    string DebugString() const override { return "ArrowFeatherDatasetOp::Dataset"; }
+    string DebugString() const override {
+      return "ArrowFeatherDatasetOp::Dataset";
+    }
 
    private:
     class Iterator : public ArrowBaseIterator<Dataset> {
@@ -460,7 +469,8 @@ class ArrowFeatherDatasetOp : public ArrowOpKernelBase {
           : ArrowBaseIterator<Dataset>(params) {}
 
      private:
-      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+      Status SetupStreamsLocked(Env* env)
+          EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         return SetupStreamsLocked();
       }
 
@@ -516,13 +526,13 @@ class ArrowFeatherDatasetOp : public ArrowOpKernelBase {
 
       size_t current_file_idx_ GUARDED_BY(mu_) = 0;
       size_t current_batch_idx_ GUARDED_BY(mu_) = 0;
-      std::vector<std::shared_ptr<arrow::RecordBatch>> record_batches_ GUARDED_BY(mu_);
+      std::vector<std::shared_ptr<arrow::RecordBatch>> record_batches_
+          GUARDED_BY(mu_);
     };
 
     const std::vector<string> filenames_;
   };
 };
-
 
 // Op to create an Arrow Dataset that consumes record batches from an input
 // stream. Currently supported input streams are a POSIX socket client, with
@@ -531,17 +541,18 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
  public:
   using DatasetOpKernel::DatasetOpKernel;
 
-  explicit ArrowStreamDatasetOp(OpKernelConstruction* ctx) : ArrowOpKernelBase(ctx) {}
+  explicit ArrowStreamDatasetOp(OpKernelConstruction* ctx)
+      : ArrowOpKernelBase(ctx) {}
 
-  virtual void MakeArrowDataset(OpKernelContext* ctx, 
-                                const std::vector<int32>& columns,
-                                const DataTypeVector& output_types,
-                                const std::vector<PartialTensorShape>& output_shapes,
-                                ArrowDatasetBase** output) override {
+  virtual void MakeArrowDataset(
+      OpKernelContext* ctx, const std::vector<int32>& columns,
+      const DataTypeVector& output_types,
+      const std::vector<PartialTensorShape>& output_shapes,
+      ArrowDatasetBase** output) override {
     const Tensor* host_tensor;
     OP_REQUIRES_OK(ctx, ctx->input("host", &host_tensor));
     OP_REQUIRES(ctx, host_tensor->dims() == 0,
-       errors::InvalidArgument("`host` must be a scalar.")); 
+                errors::InvalidArgument("`host` must be a scalar."));
     string host = host_tensor->flat<string>()(0);
 
     *output = new Dataset(ctx, host, columns, output_types_, output_shapes_);
@@ -550,8 +561,7 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
  private:
   class Dataset : public ArrowDatasetBase {
    public:
-    Dataset(OpKernelContext* ctx,
-            const string& host,
+    Dataset(OpKernelContext* ctx, const string& host,
             const std::vector<int32>& columns,
             const DataTypeVector& output_types,
             const std::vector<PartialTensorShape>& output_shapes)
@@ -565,7 +575,9 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
           new Iterator({this, strings::StrCat(prefix, "::ArrowStream")}));
     }
 
-    string DebugString() const override { return "ArrowStreamDatasetOp::Dataset"; }
+    string DebugString() const override {
+      return "ArrowStreamDatasetOp::Dataset";
+    }
 
    private:
     class Iterator : public ArrowBaseIterator<Dataset> {
@@ -574,7 +586,8 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
           : ArrowBaseIterator<Dataset>(params) {}
 
      private:
-      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
+      Status SetupStreamsLocked(Env* env)
+          EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         if (dataset()->host_ == "STDIN") {
           in_stream_ = std::make_shared<arrow::io::StdinStream>();
         } else {
@@ -583,20 +596,23 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
           if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             return errors::InvalidArgument("Socket creation error");
           }
-          bzero((char *) &serv_addr, sizeof(serv_addr));
+          bzero((char*)&serv_addr, sizeof(serv_addr));
           serv_addr.sin_addr.s_addr = inet_addr(dataset()->host_.c_str());
           serv_addr.sin_family = AF_INET;
           // TODO parse port with hostname
           serv_addr.sin_port = htons(8080);
-          //if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
-            //printf("\nInvalid address/ Address not supported \n");
-          if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-            return errors::InvalidArgument("Connection failed to host: " + dataset()->host_);
+          // if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
+          // printf("\nInvalid address/ Address not supported \n");
+          if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) <
+              0) {
+            return errors::InvalidArgument("Connection failed to host: " +
+                                           dataset()->host_);
           }
           in_stream_ = std::make_shared<SocketStream>(sock);
         }
 
-        CHECK_ARROW(arrow::ipc::RecordBatchStreamReader::Open(in_stream_.get(), &reader_));
+        CHECK_ARROW(arrow::ipc::RecordBatchStreamReader::Open(in_stream_.get(),
+                                                              &reader_));
         CHECK_ARROW(reader_->ReadNext(&current_batch_));
         return Status::OK();
       }
@@ -621,7 +637,6 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
   };
 };
 
-
 REGISTER_KERNEL_BUILDER(Name("ArrowDataset").Device(DEVICE_CPU),
                         ArrowDatasetOp);
 
@@ -632,4 +647,3 @@ REGISTER_KERNEL_BUILDER(Name("ArrowStreamDataset").Device(DEVICE_CPU),
                         ArrowStreamDatasetOp);
 
 }  // namespace tensorflow
-

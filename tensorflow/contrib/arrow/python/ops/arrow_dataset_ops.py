@@ -31,6 +31,7 @@ from tensorflow.python.framework import tensor_shape
 
 # TODO expose arrow-cpp to tensor type
 def arrow_to_tensor_type(pa_t):
+  """Conert Arrow to Tensor dtype."""
   if pa.types.is_int8(pa_t):
     tf_t = dtypes.int8
   elif pa.types.is_int16(pa_t):
@@ -63,6 +64,7 @@ def arrow_to_tensor_type(pa_t):
 
 
 def arrow_schema_to_tensor_types(schema):
+  """Convert an Arrow schema to list of Tensor dtypes."""
   return tuple([arrow_to_tensor_type(field.type) for field in schema])
 
 
@@ -102,7 +104,7 @@ class ArrowDataset(ArrowBaseDataset):
     super(ArrowDataset, self).__init__(columns, output_types)
     if isinstance(record_batches, pa.RecordBatch):
       record_batches = [record_batches]
-    assert len(record_batches) > 0
+    assert record_batches
     buf = io.BytesIO()
     writer = pa.RecordBatchFileWriter(buf, record_batches[0].schema)
     for batch in record_batches:
@@ -137,7 +139,7 @@ class ArrowDataset(ArrowBaseDataset):
 
 class ArrowFeatherDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from Arrow feather files.
-  Feather is a light-weight columnar format ideal for simple writing of 
+  Feather is a light-weight columnar format ideal for simple writing of
   Pandas DataFrames. Pyarrow can be used for reading/writing Feather files,
   see https://arrow.apache.org/docs/python/ipc.html#feather-format
   """
@@ -155,12 +157,13 @@ class ArrowFeatherDataset(ArrowBaseDataset):
     super(ArrowFeatherDataset, self).__init__(columns, output_types)
     self._filenames = ops.convert_to_tensor(
         filenames, dtype=dtypes.string, name="filenames")
-  
+
   def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_feather_dataset(self._filenames,
-                                                 self._columns,
-                                                 nest.flatten(self.output_types),
-                                                 nest.flatten(self.output_shapes))
+    return gen_dataset_ops.\
+        arrow_feather_dataset(self._filenames,
+                              self._columns,
+                              nest.flatten(self.output_types),
+                              nest.flatten(self.output_shapes))
 
 
 class ArrowStreamDataset(ArrowBaseDataset):
@@ -181,10 +184,10 @@ class ArrowStreamDataset(ArrowBaseDataset):
     super(ArrowStreamDataset, self).__init__(columns, output_types)
     self._host = ops.convert_to_tensor(
         host, dtype=dtypes.string, name="host")
-  
-  def _as_variant_tensor(self):
-    return gen_dataset_ops.arrow_stream_dataset(self._host,
-                                                self._columns,
-                                                nest.flatten(self.output_types),
-                                                nest.flatten(self.output_shapes))
 
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.\
+        arrow_stream_dataset(self._host,
+                             self._columns,
+                             nest.flatten(self.output_types),
+                             nest.flatten(self.output_shapes))

@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import os
 import socket
-import subprocess
-import sys
 import tempfile
 import threading
 
@@ -29,10 +27,7 @@ import pyarrow as pa
 from pyarrow.feather import write_feather
 
 from tensorflow.contrib.arrow.python.ops import arrow_dataset_ops
-from tensorflow.python.data.ops import iterator_ops
 from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import errors
-from tensorflow.python.ops import array_ops
 from tensorflow.python.platform import test
 
 
@@ -41,10 +36,10 @@ class ArrowDatasetTest(test.TestCase):
   def testArrowDataset(self):
 
     data = [
-       [1, 2, 3, 4],
-       [1.1, 2.2, 3.3, 4.4],
-       [[1, 1], [2, 2], [3, 3], [4, 4]],
-       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
+        [1, 2, 3, 4],
+        [1.1, 2.2, 3.3, 4.4],
+        [[1, 1], [2, 2], [3, 3], [4, 4]],
+        [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
     ]
 
     arrays = [
@@ -61,7 +56,7 @@ class ArrowDatasetTest(test.TestCase):
     output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
 
     dataset = arrow_dataset_ops.ArrowDataset(
-            batch, columns, output_types)
+        batch, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
@@ -76,7 +71,8 @@ class ArrowDatasetTest(test.TestCase):
 
     df = batch.to_pandas()
 
-    dataset = arrow_dataset_ops.ArrowDataset.from_pandas(df, preserve_index=False)
+    dataset = arrow_dataset_ops.ArrowDataset.from_pandas(
+        df, preserve_index=False)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
@@ -95,8 +91,8 @@ class ArrowDatasetTest(test.TestCase):
     names = ["int32", "float32"]
 
     data = [
-       [1, 2, 3, 4],
-       [1.1, 2.2, 3.3, 4.4],
+        [1, 2, 3, 4],
+        [1.1, 2.2, 3.3, 4.4],
     ]
 
     arrays = [
@@ -107,18 +103,13 @@ class ArrowDatasetTest(test.TestCase):
     batch = pa.RecordBatch.from_arrays(arrays, names)
     df = batch.to_pandas()
     write_feather(df, f)
-    '''
-    writer = pa.RecordBatchFileWriter(f, batch.schema)
-    writer.write_batch(batch)
-    writer.close()
-    '''
     f.close()
 
     columns = (0, 1)
     output_types = (dtypes.int32, dtypes.float32)
 
     dataset = arrow_dataset_ops.ArrowFeatherDataset(
-	f.name, columns, output_types)
+        f.name, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
@@ -134,10 +125,10 @@ class ArrowDatasetTest(test.TestCase):
   def testArrowSocketDataset(self):
 
     data = [
-       [1, 2, 3, 4],
-       [1.1, 2.2, 3.3, 4.4],
-       [[1, 1], [2, 2], [3, 3], [4, 4]],
-       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
+        [1, 2, 3, 4],
+        [1.1, 2.2, 3.3, 4.4],
+        [[1, 1], [2, 2], [3, 3], [4, 4]],
+        [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
     ]
 
     arrays = [
@@ -156,27 +147,27 @@ class ArrowDatasetTest(test.TestCase):
     host = '127.0.0.1'
     port_num = 8080
 
-    def run_server(_host, _port_num, _batch):
+    def run_server():
       s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-      s.bind((_host, _port_num))
+      s.bind((host, port_num))
       s.listen(1)
       conn, _ = s.accept()
       outfile = conn.makefile(mode='wb')
-      writer = pa.RecordBatchStreamWriter(outfile, _batch.schema)
-      writer.write_batch(_batch)
+      writer = pa.RecordBatchStreamWriter(outfile, batch.schema)
+      writer.write_batch(batch)
       writer.close()
       outfile.flush()
       outfile.close()
       conn.close()
       s.close()
 
-    server = threading.Thread(target=run_server, args=(host, port_num, batch))
+    server = threading.Thread(target=run_server)
     server.start()
 
     host_wport = host  # TODO + ':%' % port_num
 
     dataset = arrow_dataset_ops.ArrowStreamDataset(
-            host_wport, columns, output_types)
+        host_wport, columns, output_types)
 
     iterator = dataset.make_one_shot_iterator()
     next_element = iterator.get_next()
