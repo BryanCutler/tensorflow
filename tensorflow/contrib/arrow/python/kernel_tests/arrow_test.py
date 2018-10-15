@@ -19,9 +19,11 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 
 import pyarrow as pa
 from pyarrow.feather import write_feather
@@ -90,7 +92,6 @@ class ArrowDatasetTest(test.TestCase):
         self.assertListEqual(value[2].tolist(), data[2][row_num])
         self.assertListEqual(value[3].tolist(), data[3][row_num])
 
-
   def testArrowFeatherDataset(self):
     f = tempfile.NamedTemporaryFile(delete=False)
 
@@ -133,7 +134,65 @@ class ArrowDatasetTest(test.TestCase):
 
     os.unlink(f.name)
 
-  def testArrowStreamDataset(self):
+  def testArrowSocketDataset(self):
+
+    data = [
+       [1, 2, 3, 4],
+       [1.1, 2.2, 3.3, 4.4],
+       [[1, 1], [2, 2], [3, 3], [4, 4]],
+       [[1], [2, 2], [3, 3, 3], [4, 4, 4]],
+    ]
+
+    arrays = [
+        pa.array(data[0], type=pa.int32()),
+        pa.array(data[1], type=pa.float32()),
+        pa.array(data[2], type=pa.list_(pa.int32())),
+        pa.array(data[3], type=pa.list_(pa.int32())),
+    ]
+
+    names = ["%s_[%s]" % (i, a.type) for i, a in enumerate(arrays)]
+    batch = pa.RecordBatch.from_arrays(arrays, names)
+
+    columns = tuple(range(len(arrays)))
+    output_types = (dtypes.int32, dtypes.float32, dtypes.int32, dtypes.int32)
+
+    host = '127.0.0.1'
+    port_num = 8080
+
+    def run_server(_host, _port_num, _batch):
+      s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      s.bind((_host, _port_num))
+      s.listen(1)
+      conn, _ = s.accept()
+      outfile = conn.makefile(mode='wb')
+      writer = pa.RecordBatchStreamWriter(outfile, _batch.schema)
+      writer.write_batch(_batch)
+      writer.close()
+      outfile.flush()
+      outfile.close()
+      conn.close()
+      s.close()
+
+    server = threading.Thread(target=run_server, args=(host, port_num, batch))
+    server.start()
+
+    host_wport = host  # TODO + ':%' % port_num
+
+    dataset = arrow_dataset_ops.ArrowStreamDataset(
+            host_wport, columns, output_types)
+
+    iterator = dataset.make_one_shot_iterator()
+    next_element = iterator.get_next()
+
+    with self.test_session() as sess:
+      for row_num in range(len(data[0])):
+        value = sess.run(next_element)
+        self.assertEqual(value[0], data[0][row_num])
+        self.assertAlmostEqual(value[1], data[1][row_num], 2)
+
+    server.join()
+
+  def testArrowStdinDataset(self):
     names = ["int32", "float32", "fixed array(int32)", "var array(int32)"]
 
     data = [

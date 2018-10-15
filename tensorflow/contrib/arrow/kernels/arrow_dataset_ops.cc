@@ -13,6 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+// TODO posix specific
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
 #include "tensorflow/core/framework/dataset.h"
 #include "arrow/api.h"
 #include "arrow/io/api.h"
@@ -28,6 +32,49 @@ limitations under the License.
   } while (false)                              \
 
 namespace tensorflow {
+
+class SocketStream : public arrow::io::InputStream {
+ public:
+  SocketStream(int sock) : sock_(sock), pos_(0) {}
+  ~SocketStream() override {}
+
+  arrow::Status Close() override {
+    close(sock_);
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Tell(int64_t* position) const override {
+    *position = pos_;
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Read(int64_t nbytes, int64_t* bytes_read, void* out) override {
+    int status = recv(sock_, out, nbytes, MSG_WAITALL);
+    //if (status == 0) socket closed
+    if (status == -1) {
+      return arrow::Status::IOError("error reading from socket");
+    }
+    *bytes_read = nbytes;
+    pos_ += *bytes_read;
+    return arrow::Status::OK();
+  }
+
+  arrow::Status Read(int64_t nbytes, std::shared_ptr<arrow::Buffer>* out) override {
+    std::shared_ptr<arrow::ResizableBuffer> buffer;
+    ARROW_RETURN_NOT_OK(arrow::AllocateResizableBuffer(nbytes, &buffer));
+    int64_t bytes_read;
+    ARROW_RETURN_NOT_OK(Read(nbytes, &bytes_read, buffer->mutable_data()));
+    ARROW_RETURN_NOT_OK(buffer->Resize(bytes_read, false));
+    buffer->ZeroPadding();
+    *out = buffer;
+    return arrow::Status::OK();
+  }
+
+ private:
+  int sock_;
+  int64_t pos_;
+};
+
 
 class ArrowConvertTensor : public arrow::ArrayVisitor {
  public:
@@ -506,8 +553,26 @@ class ArrowStreamDatasetOp : public ArrowOpKernelBase {
      private:
       Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) override {
         if (dataset()->host_ == "STDIN") {
-          in_stream_.reset(new arrow::io::StdinStream());
+          in_stream_ = std::make_shared<arrow::io::StdinStream>();
+        } else {
+          int sock = 0;
+          struct sockaddr_in serv_addr;
+          if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            return errors::InvalidArgument("Socket creation error");
+          }
+          bzero((char *) &serv_addr, sizeof(serv_addr));
+          serv_addr.sin_addr.s_addr = inet_addr(dataset()->host_.c_str());
+          serv_addr.sin_family = AF_INET;
+          // TODO parse port with hostname
+          serv_addr.sin_port = htons(8080);
+          //if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
+            //printf("\nInvalid address/ Address not supported \n");
+          if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+            return errors::InvalidArgument("Connection failed to host: " + dataset()->host_);
+          }
+          in_stream_ = std::make_shared<SocketStream>(sock);
         }
+
         CHECK_ARROW(arrow::ipc::RecordBatchStreamReader::Open(in_stream_.get(), &reader_));
         CHECK_ARROW(reader_->ReadNext(&current_batch_));
         return Status::OK();
