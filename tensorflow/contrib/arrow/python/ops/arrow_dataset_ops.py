@@ -29,11 +29,26 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 
 
+# TODO expose arrow-cpp to tensor type
 def arrow_to_tensor_type(pa_t):
-  if pa.types.is_int32(pa_t):
+  if pa.types.is_int8(pa_t):
+    tf_t = dtypes.int8
+  elif pa.types.is_int16(pa_t):
+    tf_t = dtypes.int16
+  elif pa.types.is_int32(pa_t):
     tf_t = dtypes.int32
   elif pa.types.is_int64(pa_t):
     tf_t = dtypes.int64
+  elif pa.types.is_uint8(pa_t):
+    tf_t = dtypes.uint8
+  elif pa.types.is_uint16(pa_t):
+    tf_t = dtypes.uint16
+  elif pa.types.is_uint32(pa_t):
+    tf_t = dtypes.uint32
+  elif pa.types.is_uint64(pa_t):
+    tf_t = dtypes.uint64
+  elif pa.types.is_float16(pa_t):
+    tf_t = dtypes.float16
   elif pa.types.is_float32(pa_t):
     tf_t = dtypes.float32
   elif pa.types.is_float64(pa_t):
