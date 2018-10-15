@@ -85,15 +85,16 @@ class ArrowBaseDataset(Dataset):
   def output_types(self):
     return self._output_types
 
+
 class ArrowDataset(ArrowBaseDataset):
-  """An Arrow Dataset for reading record batches from a file.
+  """An Arrow Dataset from record batches in memory, or a Pandas DataFrame.
   """
 
   def __init__(self,
                record_batches,
                columns,
                output_types):
-    """Create an ArrowDataset.
+    """Create an ArrowDataset directly from Arrow record batches.
 
     Args:
       record_batches: An Arrow record batch or sequence of record batches
@@ -119,6 +120,13 @@ class ArrowDataset(ArrowBaseDataset):
 
   @classmethod
   def from_pandas(cls, df, columns=None, preserve_index=True):
+    """Create an ArrowDataset from a given Pandas DataFrame.
+
+    Args:
+      df: a Pandas DataFrame
+      columns: Optional column indices to use, if None all are used
+      preserve_index: Flag to include the DataFrame index as a column
+    """
     if columns is not None:
       df = df[columns]
     batch = pa.RecordBatch.from_pandas(df, preserve_index=preserve_index)
@@ -129,16 +137,20 @@ class ArrowDataset(ArrowBaseDataset):
 
 class ArrowFeatherDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from Arrow feather files.
+  Feather is a light-weight columnar format ideal for simple writing of 
+  Pandas DataFrames. Pyarrow can be used for reading/writing Feather files,
+  see https://arrow.apache.org/docs/python/ipc.html#feather-format
   """
 
   def __init__(self,
                filenames,
                columns,
                output_types):
-    """Create an ArrowDataset.
+    """Create an ArrowDataset from one or more Feather file names.
 
     Args:
-      filenames: A `tf.string` tensor containing files in Arrow Feather format
+      filenames: A `tf.string` tensor, Python list or scalar containing files
+      in Arrow Feather format
     """
     super(ArrowFeatherDataset, self).__init__(columns, output_types)
     self._filenames = ops.convert_to_tensor(
@@ -150,18 +162,21 @@ class ArrowFeatherDataset(ArrowBaseDataset):
                                                  nest.flatten(self.output_types),
                                                  nest.flatten(self.output_shapes))
 
+
 class ArrowStreamDataset(ArrowBaseDataset):
   """An Arrow Dataset for reading record batches from an input stream.
+  Currently supported input streams are a socket client or stdin.
   """
 
   def __init__(self,
                host,
                columns,
                output_types):
-    """Create an ArrowDataset.
+    """Create an ArrowDataset from an input stream.
 
     Args:
-      host: A `tf.string` tensor containing a host address..
+      host: A `tf.string` tensor or Python string defining the input stream
+      type. For a socket client, use "<HOST_IP>:<PORT>". For stdin use "STDIN".
     """
     super(ArrowStreamDataset, self).__init__(columns, output_types)
     self._host = ops.convert_to_tensor(

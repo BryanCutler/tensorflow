@@ -38,9 +38,6 @@ from tensorflow.python.platform import test
 
 class ArrowDatasetTest(test.TestCase):
 
-  def setUp(self):
-    pass
-
   def testArrowDataset(self):
 
     data = [
